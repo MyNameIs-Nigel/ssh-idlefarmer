@@ -31,7 +31,13 @@ func NewSessionLimits(maxGlobal, maxPerKey int) *SessionLimits {
 func (l *SessionLimits) Middleware() func(ssh.Handler) ssh.Handler {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(s ssh.Session) {
-			fp := identity.Fingerprint(s.PublicKey())
+			key := s.PublicKey()
+			if key == nil {
+				_, _ = io.WriteString(s, "Public key authentication is required.\r\n")
+				s.Exit(1)
+				return
+			}
+			fp := identity.Fingerprint(key)
 			if !l.acquire(fp) {
 				_, _ = io.WriteString(s, fmt.Sprintf(
 					"Too many active sessions (global max %d, per-key max %d). Try again later.\r\n",

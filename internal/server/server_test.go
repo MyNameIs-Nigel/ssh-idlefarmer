@@ -194,6 +194,85 @@ func TestDifferentKeysDifferentFingerprints(t *testing.T) {
 	}
 }
 
+func TestGlobalSessionCap(t *testing.T) {
+	_, addr := testServer(t, func(c *config.Config) {
+		c.MaxConnections = 1
+		c.MaxSessionsPerKey = 10
+	})
+
+	hold := func(signer gossh.Signer) {
+		t.Helper()
+		client, err := gossh.Dial("tcp", addr, clientConfig(t, "u1", signer))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { client.Close() })
+		sess, err := client.NewSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := sess.RequestPty("xterm", 80, 24, gossh.TerminalModes{}); err != nil {
+			t.Fatal(err)
+		}
+		if err := sess.Shell(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	hold(testSigner(t))
+
+	client2, err := gossh.Dial("tcp", addr, clientConfig(t, "u2", testSigner(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client2.Close()
+	sess2, err := client2.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	sess2.Stdout = &buf
+	_ = sess2.Run("")
+	if !strings.Contains(buf.String(), "Too many active sessions") {
+		t.Fatalf("expected global cap message, got %q", buf.String())
+	}
+}
+
+func TestRateLimitRejectsBurst(t *testing.T) {
+	_, addr := testServer(t, func(c *config.Config) {
+		c.RateLimitPerSecond = 0.01
+		c.RateLimitBurst = 1
+		c.MaxConnections = 50
+	})
+	signer := testSigner(t)
+	cfg := clientConfig(t, "rl", signer)
+
+	denied := false
+	for i := 0; i < 8; i++ {
+		client, err := gossh.Dial("tcp", addr, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sess, err := client.NewSession()
+		if err != nil {
+			client.Close()
+			t.Fatal(err)
+		}
+		var stderr bytes.Buffer
+		sess.Stderr = &stderr
+		_ = sess.Run("")
+		client.Close()
+		if strings.Contains(stderr.String(), "rate limit") {
+			denied = true
+			break
+		}
+	}
+	if !denied {
+		t.Fatal("expected at least one session to hit the rate limiter")
+	}
+}
+
 func TestPerKeySessionCap(t *testing.T) {
 	_, addr := testServer(t, func(c *config.Config) {
 		c.MaxSessionsPerKey = 1

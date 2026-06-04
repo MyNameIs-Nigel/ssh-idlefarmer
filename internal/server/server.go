@@ -46,8 +46,11 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			"slot", id.Slot,
 			"remote", s.RemoteAddr().String(),
 		)
-		pty, _, _ := s.Pty()
-		return tui.NewPlaceholder(id, pty.Window.Width, pty.Window.Height), nil
+		width, height := 80, 24
+		if pty, _, ok := s.Pty(); ok {
+			width, height = pty.Window.Width, pty.Window.Height
+		}
+		return tui.NewPlaceholder(id, width, height), nil
 	}
 
 	s, err := wish.NewServer(
