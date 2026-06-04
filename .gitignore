@@ -1,0 +1,33 @@
+# Build artifacts
+/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+/vendor/
+
+# Runtime data (never commit secrets or host keys)
+/var/
+/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# SSH host key
+ssh_host_key*
+host_key*
+*.pem
+
+# Local env
+.env
+.env.*
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
