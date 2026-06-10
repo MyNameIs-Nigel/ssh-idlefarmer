@@ -1,0 +1,100 @@
+# Test fixture: stable numbers for the sim unit tests.
+
+[start]
+coins = 25
+plots = 3
+
+[land]
+base_plot_cost = 50
+growth_pct = 170
+max_plots = 6
+
+[prestige]
+divisor = 100
+min_earnings = 10000
+
+[[upgrade]]
+id = "growth"
+name = "Rich Soil"
+description = "Crops grow 10% faster per level."
+cost = 2
+cost_growth_pct = 200
+max_level = 5
+effect = "grow_speed_pct"
+effect_value = 10
+
+[[upgrade]]
+id = "haggling"
+name = "Market Haggling"
+description = "Crops sell for 15% more per level."
+cost = 3
+cost_growth_pct = 200
+max_level = 5
+effect = "sell_bonus_pct"
+effect_value = 15
+
+[[upgrade]]
+id = "inheritance"
+name = "Inheritance"
+description = "Start each run with 150 extra coins per level."
+cost = 1
+cost_growth_pct = 300
+max_level = 4
+effect = "start_coins"
+effect_value = 150
+
+[[upgrade]]
+id = "surveying"
+name = "Surveying"
+description = "New plots cost 10% less per level."
+cost = 2
+cost_growth_pct = 200
+max_level = 4
+effect = "plot_discount_pct"
+effect_value = 10
+
+[[tool]]
+id = "auto_harvester"
+name = "Auto-Harvester"
+description = "Harvests ripe crops for you."
+cost = 1500
+unlock = { kind = "earnings", value = 1000 }
+
+[[tool]]
+id = "auto_sower"
+name = "Auto-Sower"
+description = "Replants what the harvester gathers."
+cost = 4000
+unlock = { kind = "earnings", value = 5000 }
+
+[[zone]]
+id = "greenhouse"
+name = "Greenhouse"
+description = "+6 plots and exotic crops."
+cost = 25000
+extra_plots = 6
+unlock = { kind = "earnings", value = 15000 }
+
+[[achievement]]
+id = "first_sprout"
+name = "First Sprout"
+description = "Harvest your first crop."
+condition = { kind = "harvests", value = 1 }
+
+[[achievement]]
+id = "tidy_sum"
+name = "A Tidy Sum"
+description = "Hold 1,000 coins at once."
+condition = { kind = "balance", value = 1000 }
+
+[[achievement]]
+id = "born_again"
+name = "Born Again"
+description = "Rebirth for the first time."
+condition = { kind = "rebirths", value = 1 }
+
+[flavor]
+enabled = true
+discovery_chance_pct = 4
+discovery_min = 5
+discovery_max = 40

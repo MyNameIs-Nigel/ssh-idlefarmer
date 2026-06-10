@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +15,11 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/mynameis-nigel/ssh-idlefarmer/internal/config"
+	"github.com/mynameis-nigel/ssh-idlefarmer/internal/content"
+	"github.com/mynameis-nigel/ssh-idlefarmer/internal/game"
+	"github.com/mynameis-nigel/ssh-idlefarmer/internal/identity"
 	applog "github.com/mynameis-nigel/ssh-idlefarmer/internal/log"
+	"github.com/mynameis-nigel/ssh-idlefarmer/internal/store"
 )
 
 func testServer(t *testing.T, mutate func(*config.Config)) (*Server, string) {
@@ -24,8 +29,10 @@ func testServer(t *testing.T, mutate func(*config.Config)) (*Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dir := t.TempDir()
 	cfg.ListenPort = 0
-	cfg.HostKeyPath = t.TempDir() + "/host_key"
+	cfg.HostKeyPath = filepath.Join(dir, "host_key")
+	cfg.DBPath = filepath.Join(dir, "game.db")
 	cfg.IdleTimeout = time.Hour
 	cfg.MaxSessionsPerKey = 2
 	cfg.MaxConnections = 10
@@ -35,13 +42,26 @@ func testServer(t *testing.T, mutate func(*config.Config)) (*Server, string) {
 	}
 
 	logger := applog.New("error", "text")
-	srv, err := New(cfg, logger)
+
+	st, err := store.Open(context.Background(), cfg.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	c, err := content.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	games := game.NewManager(st, c, logger, cfg.AutosaveInterval, game.Policy(cfg.SessionPolicy))
+
+	srv, err := New(cfg, logger, games)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		_ = games.Shutdown(ctx)
 		_ = srv.Shutdown(ctx)
 	})
 
@@ -105,92 +125,81 @@ func TestRejectsSessionWithoutPTY(t *testing.T) {
 	}
 }
 
-func TestPlaceholderShowsSlotAndFingerprint(t *testing.T) {
+func readScreen(t *testing.T, addr, user string, signer gossh.Signer) string {
+	t.Helper()
+	client, err := gossh.Dial("tcp", addr, clientConfig(t, user, signer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	sess, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+
+	// gossh.RequestPty takes height before width.
+	if err := sess.RequestPty("xterm", 30, 100, gossh.TerminalModes{}); err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := sess.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Shell(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	_ = sess.Close()
+	b, _ := io.ReadAll(stdout)
+	return stripANSI(string(b))
+}
+
+func TestGameShowsTitleAndSlot(t *testing.T) {
 	_, addr := testServer(t, nil)
 	signer := testSigner(t)
 
-	readScreen := func(user string) string {
-		t.Helper()
-		client, err := gossh.Dial("tcp", addr, clientConfig(t, user, signer))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer client.Close()
-
-		sess, err := client.NewSession()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer sess.Close()
-
-		if err := sess.RequestPty("xterm", 80, 24, gossh.TerminalModes{}); err != nil {
-			t.Fatal(err)
-		}
-		stdout, err := sess.StdoutPipe()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := sess.Shell(); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(300 * time.Millisecond)
-		_ = sess.Close()
-		b, _ := io.ReadAll(stdout)
-		return stripANSI(string(b))
+	screenDefault := readScreen(t, addr, "alice", signer)
+	if !strings.Contains(screenDefault, "ssh-idlefarmer") {
+		t.Fatalf("expected game title in %q", screenDefault)
 	}
-
-	screenDefault := readScreen("alice")
 	if !strings.Contains(screenDefault, "alice") {
 		t.Fatalf("expected slot alice in %q", screenDefault)
 	}
-	if !strings.Contains(screenDefault, "SHA256:") {
-		t.Fatalf("expected fingerprint in %q", screenDefault)
-	}
 
-	screenOther := readScreen("other")
+	screenOther := readScreen(t, addr, "other", signer)
 	if !strings.Contains(screenOther, "other") {
 		t.Fatalf("expected slot other in %q", screenOther)
 	}
 }
 
-func TestDifferentKeysDifferentFingerprints(t *testing.T) {
-	_, addr := testServer(t, nil)
+// TestDifferentKeysGetDistinctSaves connects two different keys with the
+// same username and confirms two isolated save rows exist, one per key.
+func TestDifferentKeysGetDistinctSaves(t *testing.T) {
+	var dbPath string
+	_, addr := testServer(t, func(c *config.Config) {
+		dbPath = c.DBPath
+	})
 
-	fp := func(signer gossh.Signer) string {
-		t.Helper()
-		client, err := gossh.Dial("tcp", addr, clientConfig(t, "same", signer))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer client.Close()
-		sess, err := client.NewSession()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer sess.Close()
-		if err := sess.RequestPty("xterm", 80, 24, gossh.TerminalModes{}); err != nil {
-			t.Fatal(err)
-		}
-		stdout, _ := sess.StdoutPipe()
-		_ = sess.Shell()
-		time.Sleep(200 * time.Millisecond)
-		_ = sess.Close()
-		out := stripANSI(readAll(stdout))
-		i := strings.Index(out, "SHA256:")
-		if i < 0 {
-			t.Fatal("no fingerprint")
-		}
-		end := strings.Index(out[i:], "\n")
-		if end < 0 {
-			return out[i:]
-		}
-		return out[i : i+end]
+	signerA, signerB := testSigner(t), testSigner(t)
+	_ = readScreen(t, addr, "same", signerA)
+	_ = readScreen(t, addr, "same", signerB)
+
+	st, err := store.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	a := fp(testSigner(t))
-	b := fp(testSigner(t))
-	if a == b {
-		t.Fatal("expected different fingerprints for different keys")
+	defer st.Close()
+	for _, signer := range []gossh.Signer{signerA, signerB} {
+		fp := identity.Fingerprint(signer.PublicKey())
+		slots, err := st.ListSlots(context.Background(), fp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(slots) != 1 || slots[0] != "same" {
+			t.Fatalf("key %s slots = %v, want [same]", fp, slots)
+		}
 	}
 }
 
@@ -321,22 +330,42 @@ func readAll(r io.Reader) string {
 	return string(b)
 }
 
+// stripANSI removes escape sequences: CSI (ESC [ ... final byte in @-~),
+// OSC (ESC ] ... BEL or ESC \), and two-byte ESC sequences.
 func stripANSI(s string) string {
 	var b strings.Builder
-	esc := false
-	for _, r := range s {
-		if esc {
-			if r == 'm' {
-				esc = false
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c != '\x1b' {
+			if c >= 32 || c == '\n' {
+				b.WriteByte(c)
 			}
+			i++
 			continue
 		}
-		if r == '\x1b' {
-			esc = true
-			continue
+		i++ // consume ESC
+		if i >= len(s) {
+			break
 		}
-		if r >= 32 || r == '\n' {
-			b.WriteRune(r)
+		switch s[i] {
+		case '[': // CSI: parameters then a final byte in @-~
+			i++
+			for i < len(s) && (s[i] < '@' || s[i] > '~') {
+				i++
+			}
+			i++ // final byte
+		case ']': // OSC: until BEL or ESC \
+			i++
+			for i < len(s) && s[i] != '\a' {
+				if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '\\' {
+					i++
+					break
+				}
+				i++
+			}
+			i++
+		default: // two-byte escape
+			i++
 		}
 	}
 	return b.String()

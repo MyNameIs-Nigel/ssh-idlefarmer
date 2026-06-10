@@ -23,17 +23,24 @@ type Config struct {
 	RateLimitPerSecond  float64
 	RateLimitBurst      int
 	RateLimitMaxEntries int
+	DBPath              string
+	AutosaveInterval    time.Duration
+	SessionPolicy       string // "takeover" or "refuse"
+	DataDir             string // content override dir; empty = embedded
 }
 
 // Load reads configuration from the environment with documented defaults.
 func Load() (Config, error) {
 	var err error
 	cfg := Config{
-		ListenHost:  envOr("IDLEFARM_LISTEN_HOST", "0.0.0.0"),
-		HostKeyPath: envOr("IDLEFARM_HOST_KEY_PATH", "var/ssh_host_key"),
-		DefaultSlot: envOr("IDLEFARM_DEFAULT_SLOT", "default"),
-		LogLevel:    envOr("IDLEFARM_LOG_LEVEL", "info"),
-		LogFormat:   envOr("IDLEFARM_LOG_FORMAT", "text"),
+		ListenHost:    envOr("IDLEFARM_LISTEN_HOST", "0.0.0.0"),
+		HostKeyPath:   envOr("IDLEFARM_HOST_KEY_PATH", "var/ssh_host_key"),
+		DefaultSlot:   envOr("IDLEFARM_DEFAULT_SLOT", "default"),
+		LogLevel:      envOr("IDLEFARM_LOG_LEVEL", "info"),
+		LogFormat:     envOr("IDLEFARM_LOG_FORMAT", "text"),
+		DBPath:        envOr("IDLEFARM_DB_PATH", "var/idlefarm.db"),
+		SessionPolicy: envOr("IDLEFARM_SESSION_POLICY", "takeover"),
+		DataDir:       os.Getenv("IDLEFARM_DATA_DIR"),
 	}
 	if cfg.ListenPort, err = envIntOr("IDLEFARM_LISTEN_PORT", 22); err != nil {
 		return Config{}, err
@@ -54,6 +61,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.RateLimitMaxEntries, err = envIntOr("IDLEFARM_RATE_LIMIT_MAX_IPS", 1000); err != nil {
+		return Config{}, err
+	}
+	if cfg.AutosaveInterval, err = envDurationOr("IDLEFARM_AUTOSAVE_INTERVAL", 30*time.Second); err != nil {
 		return Config{}, err
 	}
 
@@ -80,6 +90,16 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("IDLEFARM_DEFAULT_SLOT must sanitize to 1-32 characters [a-z0-9_-]")
 	}
 	cfg.DefaultSlot = slot
+
+	if cfg.AutosaveInterval < time.Second {
+		return Config{}, fmt.Errorf("IDLEFARM_AUTOSAVE_INTERVAL must be at least 1s")
+	}
+	if cfg.SessionPolicy != "takeover" && cfg.SessionPolicy != "refuse" {
+		return Config{}, fmt.Errorf("IDLEFARM_SESSION_POLICY must be %q or %q, got %q", "takeover", "refuse", cfg.SessionPolicy)
+	}
+	if cfg.DBPath == "" {
+		return Config{}, fmt.Errorf("IDLEFARM_DB_PATH must not be empty")
+	}
 
 	return cfg, nil
 }

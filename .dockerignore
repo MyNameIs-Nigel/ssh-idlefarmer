@@ -1,0 +1,34 @@
+# Keep the build context to source only: no secrets, no state, no clutter.
+.git
+.gitignore
+.claude
+.dockerignore
+Dockerfile
+docker-compose.yml
+README.md
+LICENSE
+tasks/
+
+# Build artifacts and caches
+bin/
+dist/
+vendor/
+*.exe
+
+# Runtime state and secrets — never in the image
+var/
+*.db
+*.sqlite
+*.sqlite3
+ssh_host_key*
+host_key*
+*.pem
+.env
+.env.*
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

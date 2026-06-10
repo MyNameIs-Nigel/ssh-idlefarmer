@@ -1,11 +1,17 @@
 package server
 
 import (
+	"context"
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mynameis-nigel/ssh-idlefarmer/internal/config"
+	"github.com/mynameis-nigel/ssh-idlefarmer/internal/content"
+	"github.com/mynameis-nigel/ssh-idlefarmer/internal/game"
 	applog "github.com/mynameis-nigel/ssh-idlefarmer/internal/log"
+	"github.com/mynameis-nigel/ssh-idlefarmer/internal/store"
 )
 
 func TestHostKeyPersistedAcrossRestarts(t *testing.T) {
@@ -26,9 +32,23 @@ func TestHostKeyPersistedAcrossRestarts(t *testing.T) {
 		RateLimitPerSecond:  100,
 		RateLimitBurst:      10,
 		RateLimitMaxEntries: 100,
+		DBPath:              filepath.Join(dir, "game.db"),
+		AutosaveInterval:    time.Minute,
+		SessionPolicy:       "takeover",
 	}
 
-	srv1, err := New(cfg, logger)
+	st, err := store.Open(context.Background(), cfg.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	c, err := content.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	games := game.NewManager(st, c, logger, cfg.AutosaveInterval, game.PolicyTakeover)
+
+	srv1, err := New(cfg, logger, games)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +58,7 @@ func TestHostKeyPersistedAcrossRestarts(t *testing.T) {
 	}
 	_ = srv1
 
-	srv2, err := New(cfg, logger)
+	srv2, err := New(cfg, logger, games)
 	if err != nil {
 		t.Fatal(err)
 	}

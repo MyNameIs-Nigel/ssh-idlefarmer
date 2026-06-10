@@ -1,0 +1,83 @@
+# Crop definitions for ssh-idlefarmer.
+#
+# Every crop needs: id, name, archetype, seed_cost, grow_seconds, sell_value.
+# Archetypes: "fast" (cheap staple), "slow" (patient payoff), "risky" (variance).
+# Risky crops additionally set fail_chance_pct / fail_value and
+# bonus_chance_pct / bonus_value (percentages are integers 0-100).
+#
+# unlock: how the crop becomes plantable.
+#   kind = "start"            available from the first run
+#   kind = "earnings", value  lifetime run earnings reach `value` coins
+#   kind = "prestige", value  total rebirths reach `value`
+#   kind = "zone", zone       owning the named zone unlocks it
+
+[[crop]]
+id = "turnip"
+name = "Turnip"
+archetype = "fast"
+seed_cost = 5
+grow_seconds = 60
+sell_value = 9
+unlock = { kind = "start" }
+
+[[crop]]
+id = "carrot"
+name = "Carrot"
+archetype = "fast"
+seed_cost = 14
+grow_seconds = 240
+sell_value = 28
+unlock = { kind = "start" }
+
+[[crop]]
+id = "pumpkin"
+name = "Pumpkin"
+archetype = "slow"
+seed_cost = 80
+grow_seconds = 3600
+sell_value = 230
+unlock = { kind = "start" }
+
+[[crop]]
+id = "starfruit"
+name = "Starfruit"
+archetype = "slow"
+seed_cost = 600
+grow_seconds = 28800
+sell_value = 2200
+unlock = { kind = "earnings", value = 2000 }
+
+[[crop]]
+id = "glimmercorn"
+name = "Glimmercorn"
+archetype = "risky"
+seed_cost = 40
+grow_seconds = 900
+sell_value = 140
+fail_chance_pct = 25
+fail_value = 25
+bonus_chance_pct = 10
+bonus_value = 320
+unlock = { kind = "earnings", value = 500 }
+
+[[crop]]
+id = "moonberry"
+name = "Moonberry"
+archetype = "risky"
+seed_cost = 350
+grow_seconds = 7200
+sell_value = 1300
+fail_chance_pct = 30
+fail_value = 200
+bonus_chance_pct = 12
+bonus_value = 3100
+unlock = { kind = "prestige", value = 1 }
+
+[[crop]]
+id = "dewmelon"
+name = "Dewmelon"
+archetype = "slow"
+seed_cost = 1200
+grow_seconds = 43200
+sell_value = 4800
+unlock = { kind = "zone", zone = "greenhouse" }

@@ -9,9 +9,10 @@
 # Go
 /vendor/
 
-# Runtime data (never commit secrets or host keys)
+# Runtime data (never commit secrets or host keys).
+# NOTE: /data/ holds committed game content (crops.toml, balance.toml) and is
+# embedded into the binary — it is intentionally NOT ignored.
 /var/
-/data/
 *.db
 *.sqlite
 *.sqlite3

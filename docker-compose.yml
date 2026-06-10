@@ -1,0 +1,45 @@
+services:
+  idlefarmer:
+    build: .
+    image: ssh-idlefarmer:latest
+    container_name: ssh-idlefarmer
+
+    # Host port 22 -> container 2222: players just `ssh farm.example.com`,
+    # while the process inside stays unprivileged. Change the left side to
+    # expose the game on a different host port.
+    ports:
+      - "22:2222"
+
+    # All player saves and the SSH host key live on this named volume, so
+    # state and host identity survive restarts, rebuilds, and redeploys.
+    volumes:
+      - idlefarm-data:/var/lib/idlefarm
+
+    environment:
+      IDLEFARM_LOG_FORMAT: json
+      # Tune limits here if needed; see README for the full variable table.
+      # IDLEFARM_MAX_CONNECTIONS: "100"
+      # IDLEFARM_MAX_SESSIONS_PER_KEY: "2"
+      # IDLEFARM_SESSION_POLICY: takeover
+
+    restart: unless-stopped
+
+    # Docker sends SIGTERM on stop; the server flushes every active save
+    # before exiting (within its internal 30s budget). The grace period sits
+    # comfortably above that so a flush is never cut off mid-write.
+    stop_grace_period: 45s
+
+    # Hardening: immutable root filesystem (only the volume is writable),
+    # no capabilities, no privilege escalation, bounded resources.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 1.0
+
+volumes:
+  idlefarm-data:

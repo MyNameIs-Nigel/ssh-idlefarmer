@@ -1,0 +1,137 @@
+# Tunable balance for ssh-idlefarmer. All money values are integer coins.
+# Multipliers are expressed in basis points-style integer percentages so the
+# engine never touches floating point for balances.
+
+[start]
+coins = 25          # starting wallet for a brand-new run
+plots = 3           # plots a fresh farm begins with
+
+[land]
+# Cost of the Nth additional plot: base * (growth_pct/100)^(owned - start_plots),
+# computed with integer math. Each plot costs more than the last.
+base_plot_cost = 50
+growth_pct = 170          # each plot costs 1.7x the previous one
+max_plots = 24            # hard cap on farm size (zones add more)
+
+[prestige]
+# Prestige earned on rebirth: isqrt(lifetime_run_earnings / divisor).
+# Rebirth is allowed once at least min_earnings has been earned this run.
+divisor = 100
+min_earnings = 10000
+
+# Permanent upgrades bought with prestige currency. Effects are integer
+# percentages applied multiplicatively per level.
+[[upgrade]]
+id = "growth"
+name = "Rich Soil"
+description = "Crops grow 10% faster per level."
+cost = 2
+cost_growth_pct = 200     # each level costs 2x the previous
+max_level = 5
+effect = "grow_speed_pct"
+effect_value = 10
+
+[[upgrade]]
+id = "haggling"
+name = "Market Haggling"
+description = "Crops sell for 15% more per level."
+cost = 3
+cost_growth_pct = 200
+max_level = 5
+effect = "sell_bonus_pct"
+effect_value = 15
+
+[[upgrade]]
+id = "inheritance"
+name = "Inheritance"
+description = "Start each run with 150 extra coins per level."
+cost = 1
+cost_growth_pct = 300
+max_level = 4
+effect = "start_coins"
+effect_value = 150
+
+[[upgrade]]
+id = "surveying"
+name = "Surveying"
+description = "New plots cost 10% less per level."
+cost = 2
+cost_growth_pct = 200
+max_level = 4
+effect = "plot_discount_pct"
+effect_value = 10
+
+# Tools are quality-of-life automation bought with coins during a run.
+# They reset on rebirth (they are run-scoped).
+[[tool]]
+id = "auto_harvester"
+name = "Auto-Harvester"
+description = "Harvests ripe crops for you, even while you're away."
+cost = 1500
+unlock = { kind = "earnings", value = 1000 }
+
+[[tool]]
+id = "auto_sower"
+name = "Auto-Sower"
+description = "Replants whatever the Auto-Harvester just gathered."
+cost = 4000
+unlock = { kind = "earnings", value = 5000 }
+
+# Zones expand the farm. Run-scoped: they reset on rebirth.
+[[zone]]
+id = "greenhouse"
+name = "Greenhouse"
+description = "A warm glass annex. +6 plots and exotic crops."
+cost = 25000
+extra_plots = 6
+unlock = { kind = "earnings", value = 15000 }
+
+# Achievements are positive-only milestones. Conditions:
+#   kind = "harvests", value     total lifetime harvests
+#   kind = "earnings", value     total lifetime earnings (across rebirths)
+#   kind = "plots", value        plots owned at once
+#   kind = "rebirths", value     total rebirths
+#   kind = "balance", value      wallet balance reached
+[[achievement]]
+id = "first_sprout"
+name = "First Sprout"
+description = "Harvest your first crop."
+condition = { kind = "harvests", value = 1 }
+
+[[achievement]]
+id = "green_thumb"
+name = "Green Thumb"
+description = "Harvest 100 crops."
+condition = { kind = "harvests", value = 100 }
+
+[[achievement]]
+id = "tidy_sum"
+name = "A Tidy Sum"
+description = "Hold 1,000 coins at once."
+condition = { kind = "balance", value = 1000 }
+
+[[achievement]]
+id = "landed_gentry"
+name = "Landed Gentry"
+description = "Own 10 plots at once."
+condition = { kind = "plots", value = 10 }
+
+[[achievement]]
+id = "magnate"
+name = "Turnip Magnate"
+description = "Earn 100,000 lifetime coins."
+condition = { kind = "earnings", value = 100000 }
+
+[[achievement]]
+id = "born_again"
+name = "Born Again"
+description = "Rebirth for the first time."
+condition = { kind = "rebirths", value = 1 }
+
+# Ambient flavor: small lucky discoveries on harvest. Never negative,
+# toggleable, and driven by the save's seeded RNG so it is reproducible.
+[flavor]
+enabled = true
+discovery_chance_pct = 4       # chance per harvest of a small find
+discovery_min = 5              # coins found, scaled by prestige level
+discovery_max = 40
