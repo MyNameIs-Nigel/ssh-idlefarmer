@@ -21,6 +21,26 @@ type Model = tea.Model
 // ProgramOption is a Bubble Tea program option.
 type ProgramOption = tea.ProgramOption
 
+// errScreen is a minimal fallback shown if a session ever reaches the UI
+// without an attached save (should not happen; never crash a session over it).
+type errScreen struct{}
+
+// NewErrScreen returns the fallback model.
+func NewErrScreen() Model { return errScreen{} }
+
+func (errScreen) Init() tea.Cmd { return nil }
+
+func (e errScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(tea.KeyPressMsg); ok {
+		return e, tea.Quit
+	}
+	return e, nil
+}
+
+func (errScreen) View() tea.View {
+	return tea.NewView("\n  🌧 The farm could not be opened just now.\n  Press any key to disconnect, then try again.\n")
+}
+
 type screen int
 
 const (

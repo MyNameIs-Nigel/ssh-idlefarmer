@@ -113,17 +113,18 @@ func (s *State) CanRebirth(c *content.Content) bool {
 	return s.RunEarnings >= c.Prestige.MinEarnings && s.PrestigeGain(c) >= 1
 }
 
-// isqrt is the integer square root (floor) for non-negative n.
+// isqrt is the integer square root (floor) for non-negative n. The
+// correction loops compare via division so they cannot overflow even for n
+// near MaxInt64 (saturated lifetime earnings).
 func isqrt(n int64) int64 {
-	if n < 0 {
+	if n <= 0 {
 		return 0
 	}
 	r := int64(math.Sqrt(float64(n)))
-	// Correct any float rounding at the boundary; balances stay integer.
-	for r*r > n {
+	for r > 0 && r > n/r {
 		r--
 	}
-	for (r+1)*(r+1) <= n {
+	for r+1 <= n/(r+1) {
 		r++
 	}
 	return r

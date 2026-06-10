@@ -125,8 +125,8 @@ func (srv *Server) attachSave() func(ssh.Handler) ssh.Handler {
 func (srv *Server) teaHandler(s ssh.Session) (tui.Model, []tui.ProgramOption) {
 	state, _ := s.Context().Value(sessionKey{}).(*sessionState)
 	if state == nil {
-		// attachSave always runs first; this is unreachable in practice.
-		return nil, nil
+		// attachSave always runs first; never hand Wish a nil model anyway.
+		return tui.NewErrScreen(), nil
 	}
 	width, height := 80, 24
 	if pty, _, ok := s.Pty(); ok {

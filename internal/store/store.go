@@ -136,11 +136,15 @@ func (st *Store) LoadOrCreateSave(ctx context.Context, fingerprint, slot string,
 	if err != nil {
 		return SaveRow{}, false, fmt.Errorf("store: build fresh save: %w", err)
 	}
-	_, err = st.db.ExecContext(ctx, `
+	res, err := st.db.ExecContext(ctx, `
 		INSERT INTO saves (fingerprint, slot, created_at, last_active, state, state_version)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT (fingerprint, slot) DO NOTHING`,
 		fingerprint, slot, now, now, state, version)
+	if err != nil {
+		return SaveRow{}, false, fmt.Errorf("store: create save: %w", err)
+	}
+	inserted, err := res.RowsAffected()
 	if err != nil {
 		return SaveRow{}, false, fmt.Errorf("store: create save: %w", err)
 	}
@@ -149,8 +153,7 @@ func (st *Store) LoadOrCreateSave(ctx context.Context, fingerprint, slot string,
 	if err != nil {
 		return SaveRow{}, false, err
 	}
-	created := row.CreatedAt == now && row.LastActive == now
-	return row, created, nil
+	return row, inserted == 1, nil
 }
 
 func (st *Store) loadSave(ctx context.Context, fingerprint, slot string) (SaveRow, error) {

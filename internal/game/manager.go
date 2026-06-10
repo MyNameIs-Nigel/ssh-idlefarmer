@@ -134,10 +134,10 @@ func (m *Manager) Attach(ctx context.Context, id identity.SessionIdentity, publi
 		}
 	})
 	if !ok {
-		// The actor stopped between lookup and attach (lost a race with a
-		// final detach). Retry once with a fresh actor.
+		// Cannot happen while we hold m.mu (actors only stop under the same
+		// lock), but if it ever does, fail politely rather than wedge.
 		delete(m.actors, key)
-		return m.attachLocked(ctx, id, now, kick)
+		return AttachResult{}, errors.New("save is closing, try again")
 	}
 	if refused {
 		return AttachResult{}, ErrSaveBusy
@@ -146,42 +146,6 @@ func (m *Manager) Attach(ctx context.Context, id identity.SessionIdentity, publi
 	m.logger.Info("session attached",
 		"fingerprint", id.Fingerprint, "slot", id.Slot, "created", created)
 	return AttachResult{Session: sess, Away: away, Created: created}, nil
-}
-
-// attachLocked retries an attach after a stale actor was evicted. The
-// manager lock is already held.
-func (m *Manager) attachLocked(ctx context.Context, id identity.SessionIdentity, now int64, kick func(string)) (AttachResult, error) {
-	key := saveKey{fingerprint: id.Fingerprint, slot: id.Slot}
-	row, _, err := m.store.LoadOrCreateSave(ctx, id.Fingerprint, id.Slot, now, func() ([]byte, int, error) {
-		state := sim.New(m.content, randomSeed(), now)
-		payload, err := state.Encode()
-		return payload, state.Version, err
-	})
-	if err != nil {
-		return AttachResult{}, err
-	}
-	state, err := sim.DecodeState(row.State)
-	if err != nil {
-		return AttachResult{}, fmt.Errorf("load save %q: %w", id.Slot, err)
-	}
-	a := newActor(m, key, state)
-	m.actors[key] = a
-
-	sess := &Session{
-		id:     m.nextID.Add(1),
-		actor:  a,
-		kicked: make(chan string, 1),
-		kickFn: kick,
-	}
-	var away sim.Events
-	a.do(func() {
-		a.session = sess
-		away = sim.Advance(a.state, m.content, now)
-		if away.Elapsed > 0 {
-			a.dirty = true
-		}
-	})
-	return AttachResult{Session: sess, Away: away}, nil
 }
 
 // detach is called by Session.Detach: persist, release the session, and stop

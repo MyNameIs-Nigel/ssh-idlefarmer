@@ -642,6 +642,22 @@ func TestFlavorDiscoveriesAreSeededAndOptional(t *testing.T) {
 	}
 }
 
+func TestIsqrtBoundaries(t *testing.T) {
+	cases := map[int64]int64{
+		0: 0, 1: 1, 3: 1, 4: 2, 99: 9, 100: 10,
+		(1 << 62): 1 << 31, // exact power of four
+		1<<63 - 1: 3037000499, // MaxInt64: must not overflow the loops
+	}
+	for n, want := range cases {
+		if got := isqrt(n); got != want {
+			t.Errorf("isqrt(%d) = %d, want %d", n, got, want)
+		}
+	}
+	if got := isqrt(-5); got != 0 {
+		t.Errorf("isqrt(-5) = %d, want 0", got)
+	}
+}
+
 func TestSaturatingMoneyNeverOverflows(t *testing.T) {
 	c := testContent(t)
 	s := newTestState(t, c)
