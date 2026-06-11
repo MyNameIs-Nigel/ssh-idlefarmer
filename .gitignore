@@ -26,6 +26,9 @@ host_key*
 .env
 .env.*
 
+# Local scratch (screenshots, probe captures, manual-test artifacts)
+/temp/
+
 # IDE / OS
 .idea/
 .vscode/

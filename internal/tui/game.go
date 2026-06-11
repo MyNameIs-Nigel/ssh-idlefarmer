@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/mynameis-nigel/ssh-idlefarmer/internal/content"
 	"github.com/mynameis-nigel/ssh-idlefarmer/internal/game"
@@ -23,7 +24,9 @@ type ProgramOption = tea.ProgramOption
 
 // errScreen is a minimal fallback shown if a session ever reaches the UI
 // without an attached save (should not happen; never crash a session over it).
-type errScreen struct{}
+type errScreen struct {
+	width, height int
+}
 
 // NewErrScreen returns the fallback model.
 func NewErrScreen() Model { return errScreen{} }
@@ -31,14 +34,22 @@ func NewErrScreen() Model { return errScreen{} }
 func (errScreen) Init() tea.Cmd { return nil }
 
 func (e errScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if _, ok := msg.(tea.KeyPressMsg); ok {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		e.width, e.height = msg.Width, msg.Height
+		return e, nil
+	case tea.KeyPressMsg:
 		return e, tea.Quit
 	}
 	return e, nil
 }
 
-func (errScreen) View() tea.View {
-	return tea.NewView("\n  🌧 The farm could not be opened just now.\n  Press any key to disconnect, then try again.\n")
+func (e errScreen) View() tea.View {
+	msg := "🌧 The farm could not be opened just now.\nPress any key to disconnect, then try again."
+	v := tea.NewView(lipgloss.Place(max(e.width, 1), max(e.height, 1), lipgloss.Center, lipgloss.Center, msg))
+	v.AltScreen = true
+	v.WindowTitle = windowTitle
+	return v
 }
 
 type screen int

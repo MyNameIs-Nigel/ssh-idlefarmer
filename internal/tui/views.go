@@ -30,47 +30,49 @@ var (
 )
 
 func (g *Game) View() tea.View {
-	if g.width < 36 || g.height < 10 {
-		return tea.NewView("\n  This farm needs a bigger window\n  (at least 36×10). Resize to play,\n  or press q to leave.\n")
+	if g.width < minWidth || g.height < minHeight {
+		return g.fullscreen("This farm needs a bigger window\n(at least 36×10). Resize to play,\nor press q to leave.")
 	}
+	if g.overlay != ovNone {
+		return g.fullscreen(g.composeCanvas(g.overlayBox(), true))
+	}
+	return g.fullscreen(g.composeCanvas(g.screenBody(), false))
+}
 
-	var body string
+// overlayBox renders the active overlay as a boxed modal.
+func (g *Game) overlayBox() string {
 	switch g.overlay {
 	case ovOnboarding:
-		body = g.viewOnboarding()
+		return g.viewOnboarding()
 	case ovAway:
-		body = g.viewAway()
+		return g.viewAway()
 	case ovPicker:
-		body = g.viewPicker()
+		return g.viewPicker()
 	case ovRebirthConfirm:
-		body = g.viewRebirthConfirm()
+		return g.viewRebirthConfirm()
 	case ovKicked:
-		body = g.viewKicked()
-	default:
-		switch g.scr {
-		case scrFarm:
-			body = g.viewFarm()
-		case scrMarket:
-			body = g.viewMarket()
-		case scrLand:
-			body = g.viewLand()
-		case scrRebirth:
-			body = g.viewRebirth()
-		case scrStats:
-			body = g.viewStats()
-		case scrHelp:
-			body = g.viewHelp()
-		}
+		return g.viewKicked()
 	}
+	return ""
+}
 
-	sections := []string{g.viewHeader(), g.viewNav(), "", body}
-	if n := g.viewNotices(); n != "" {
-		sections = append(sections, "", n)
+// screenBody renders the active screen's content.
+func (g *Game) screenBody() string {
+	switch g.scr {
+	case scrFarm:
+		return g.viewFarm()
+	case scrMarket:
+		return g.viewMarket()
+	case scrLand:
+		return g.viewLand()
+	case scrRebirth:
+		return g.viewRebirth()
+	case scrStats:
+		return g.viewStats()
+	case scrHelp:
+		return g.viewHelp()
 	}
-	sections = append(sections, "", g.viewFooter())
-
-	out := strings.Join(sections, "\n")
-	return tea.NewView(lipgloss.NewStyle().MaxWidth(g.width).MaxHeight(g.height).Render(out))
+	return ""
 }
 
 func (g *Game) viewHeader() string {
@@ -80,7 +82,7 @@ func (g *Game) viewHeader() string {
 	if st.Rebirths > 0 || st.PrestigeCurrency > 0 {
 		right += styleHeader.Render("  ✦ " + money(st.PrestigeCurrency) + " prestige")
 	}
-	gap := g.width - lipgloss.Width(left) - lipgloss.Width(right)
+	gap := g.contentWidth() - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
@@ -112,7 +114,7 @@ func (g *Game) viewNotices() string {
 	}
 	lines := make([]string, 0, len(g.notices))
 	for _, n := range g.notices {
-		lines = append(lines, styleNotice.Render(truncate(n.text, g.width-2)))
+		lines = append(lines, styleNotice.Render(truncate(n.text, g.contentWidth()-2)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -139,7 +141,7 @@ func (g *Game) viewFooter() string {
 	default:
 		hints = "1-5 screens · q quit"
 	}
-	return styleHint.Render(truncate(hints, g.width-1))
+	return styleHint.Render(truncate(hints, g.contentWidth()-1))
 }
 
 // farmColumns picks how many plot cards fit per row.
@@ -147,7 +149,7 @@ func (g *Game) farmColumns() int {
 	if g.compactFarm() {
 		return 1
 	}
-	cols := g.width / 22
+	cols := g.contentWidth() / 22
 	if cols < 1 {
 		cols = 1
 	}
@@ -157,10 +159,11 @@ func (g *Game) farmColumns() int {
 	return cols
 }
 
-// compactFarm switches to one-line plot rows on small terminals.
+// compactFarm switches to one-line plot rows on small canvases.
 func (g *Game) compactFarm() bool {
-	rowsNeeded := (len(g.snap.State.Plots) + g.width/22 - 1) / max(g.width/22, 1)
-	return g.width < 66 || g.height < rowsNeeded*3+10
+	cw, chh := g.contentWidth(), g.contentHeight()
+	rowsNeeded := (len(g.snap.State.Plots) + cw/22 - 1) / max(cw/22, 1)
+	return cw < 66 || chh < rowsNeeded*3+10
 }
 
 func (g *Game) viewFarm() string {
@@ -220,7 +223,7 @@ func (g *Game) plotCard(i int) string {
 
 func (g *Game) viewFarmCompact() string {
 	st := g.snap.State
-	maxRows := g.height - 10
+	maxRows := g.contentHeight() - 9
 	if maxRows < 3 {
 		maxRows = 3
 	}

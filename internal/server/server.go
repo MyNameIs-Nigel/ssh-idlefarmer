@@ -66,7 +66,7 @@ func New(cfg config.Config, logger *slog.Logger, games *game.Manager) (*Server, 
 		// requirement → save attach → the game UI. The Bubble Tea handler
 		// is the only thing a session can ever reach — there is no shell.
 		wish.WithMiddleware(
-			bubbletea.Middleware(srv.teaHandler),
+			bubbletea.MiddlewareWithProgramHandler(srv.newTeaProgram),
 			srv.attachSave(),
 			RequirePTY(),
 			limits.Middleware(),
