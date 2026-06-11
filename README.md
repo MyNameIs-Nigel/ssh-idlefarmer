@@ -11,11 +11,14 @@ ssh farm.example.com            # your default save slot
 ssh otherfarm@farm.example.com  # a second farm under the same key
 ```
 
-- **Farm** — plant on empty plots, watch crops grow live, harvest when ready.
-- **Market** — compare crops (fast / slow / risky) and buy automation tools and zones.
-- **Land** — buy more plots; each costs more than the last.
-- **Rebirth** — reset a mature run for prestige, spent on permanent multipliers that make every future run faster.
-- **Stats** — lifetime numbers and achievements.
+- **Farm** — plant on empty plots, watch crops grow live, harvest when ready. Upgrade individual plots with auto-harvest and auto-sow. Shoo visiting critters for pocket change.
+- **Market** — buy run-scoped multipliers (Fertilizer, Merchant's Scale), Hardier Strain upgrades for risky crops, and zones like the Greenhouse.
+- **Land** — buy more plots and browse the full seed catalog (fast / slow / risky, with salvage values for risky crops).
+- **Rebirth** — reset a mature run for **Starseeds** (cosmic currency earned from run earnings). Preview what the next rebirth unlocks.
+- **Progress** — unlocked after your first rebirth; spend Starseeds on permanent upgrades (Rich Soil, Gift Magnet, Stargazer's Almanac, and more).
+- **Stats** — lifetime numbers, achievements, farm naming, and lucky-find toggle.
+
+While online you may see random events (Market Day, Bumper Demand, Warm Front), gift parcels at the gate (`g` to redeem), golden harvests, moon phases (full moon boosts Moonberry), and headlines in **The Daily Furrow**. If you're broke with empty plots, the cheapest seed plants for free.
 
 Press `?` in game for keys. Quit any time — progress autosaves, and the farm keeps moving without you.
 

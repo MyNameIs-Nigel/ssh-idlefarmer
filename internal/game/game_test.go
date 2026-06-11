@@ -248,8 +248,8 @@ func TestIntentsValidateAgainstAuthoritativeState(t *testing.T) {
 	if _, _, _, err := res.Session.Rebirth(1000); err != sim.ErrRebirthTooSoon {
 		t.Fatalf("expected ErrRebirthTooSoon, got %v", err)
 	}
-	if _, _, err := res.Session.BuyTool(1000, "auto_harvester"); err != sim.ErrLocked {
-		t.Fatalf("expected ErrLocked, got %v", err)
+	if _, _, err := res.Session.UpgradePlotAuto(1000, 0, "harvest"); err != sim.ErrCantAfford {
+		t.Fatalf("expected ErrCantAfford for plot auto at 25 coins, got %v", err)
 	}
 	snap, _, _ := res.Session.Advance(1001)
 	if snap.State.Coins != 25 {

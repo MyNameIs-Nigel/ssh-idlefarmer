@@ -1,7 +1,4 @@
-// Package tui is the player-facing terminal interface: a thin presentation
-// and input layer over the deterministic engine. It renders snapshots and
-// sends intents; every game rule lives server-side in internal/sim, behind
-// the save actor. The UI never computes an outcome itself.
+// Package tui is the player-facing terminal interface.
 package tui
 
 import (
@@ -22,13 +19,10 @@ type Model = tea.Model
 // ProgramOption is a Bubble Tea program option.
 type ProgramOption = tea.ProgramOption
 
-// errScreen is a minimal fallback shown if a session ever reaches the UI
-// without an attached save (should not happen; never crash a session over it).
 type errScreen struct {
 	width, height int
 }
 
-// NewErrScreen returns the fallback model.
 func NewErrScreen() Model { return errScreen{} }
 
 func (errScreen) Init() tea.Cmd { return nil }
@@ -59,11 +53,12 @@ const (
 	scrMarket
 	scrLand
 	scrRebirth
+	scrProgress
 	scrStats
 	scrHelp
 )
 
-var screenOrder = []screen{scrFarm, scrMarket, scrLand, scrRebirth, scrStats, scrHelp}
+var screenOrder = []screen{scrFarm, scrMarket, scrLand, scrRebirth, scrProgress, scrStats, scrHelp}
 
 type overlay int
 
@@ -72,7 +67,9 @@ const (
 	ovOnboarding
 	ovAway
 	ovPicker
+	ovUpgrade
 	ovRebirthConfirm
+	ovName
 	ovKicked
 )
 
@@ -97,33 +94,30 @@ type Game struct {
 	width  int
 	height int
 
-	scr        screen
-	overlay    overlay
-	cursor     int // selected plot on the farm
-	pickerIdx  int // crop picker selection
-	marketIdx  int // market item selection
-	upgradeIdx int // prestige upgrade selection
+	scr         screen
+	overlay     overlay
+	cursor      int
+	pickerIdx   int
+	marketIdx   int
+	upgradeIdx  int
+	progressIdx int
+	nameInput   string
 
 	notices    []notice
 	away       sim.Events
 	kickReason string
-	quitAt     int64 // when set, quit at this unix time (gentle goodbye)
+	quitAt     int64
 
-	// Idle handling lives here, not in the SSH layer: the live tick writes
-	// to the connection every second, which resets any transport-level idle
-	// timer. Only real key presses count as activity.
-	idleTimeout int64 // seconds; 0 disables
+	idleTimeout int64
 	lastInput   int64
 }
 
-// NewGame builds the session UI from the attach result. idleTimeout (seconds,
-// 0 to disable) disconnects sessions that stop pressing keys.
 func NewGame(id identity.SessionIdentity, res game.AttachResult, c *content.Content, width, height int, now int64, idleTimeout int64) *Game {
 	g := &Game{
 		sess:        res.Session,
 		content:     c,
 		id:          id,
-		snap:        game.Snapshot{State: sim.New(c, 0, now), Now: now}, // replaced on first tick
+		snap:        game.Snapshot{State: sim.New(c, 0, now), Now: now},
 		now:         now,
 		width:       max(width, 1),
 		height:      max(height, 1),
@@ -144,7 +138,6 @@ func (g *Game) Init() tea.Cmd {
 	return tea.Batch(g.refresh(), tickCmd(), g.waitKick())
 }
 
-// refresh pulls an immediate authoritative snapshot (first paint).
 func (g *Game) refresh() tea.Cmd {
 	return func() tea.Msg { return tickMsg(time.Now()) }
 }
@@ -171,7 +164,7 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case kickedMsg:
 		if msg == "" {
-			return g, tea.Quit // normal detach elsewhere; just stop
+			return g, tea.Quit
 		}
 		g.kickReason = string(msg)
 		g.overlay = ovKicked
@@ -187,7 +180,7 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			g.kickReason = "You drifted off, so the farm tucked itself in. Reconnect whenever you like!"
 			g.overlay = ovKicked
 			g.quitAt = g.now + 3
-			return g, tickCmd() // keep ticking so the goodbye actually quits
+			return g, tickCmd()
 		}
 		snap, ev, err := g.sess.Advance(g.now)
 		if err != nil {
@@ -208,7 +201,6 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (g *Game) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
-	// Ctrl+C always works, everywhere.
 	if key == "ctrl+c" {
 		return g, tea.Quit
 	}
@@ -221,14 +213,20 @@ func (g *Game) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return g, nil
 	case ovPicker:
 		return g.handlePickerKey(key)
+	case ovUpgrade:
+		return g.handleUpgradeKey(key)
 	case ovRebirthConfirm:
 		return g.handleRebirthConfirmKey(key)
+	case ovName:
+		return g.handleNameKey(key, msg)
 	}
 
-	// Global navigation.
+	// Global keys.
 	switch key {
 	case "q":
 		return g, tea.Quit
+	case "g":
+		return g.redeemGift()
 	case "f", "1":
 		g.scr = scrFarm
 		return g, nil
@@ -241,10 +239,13 @@ func (g *Game) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "r", "4":
 		g.scr = scrRebirth
 		return g, nil
-	case "s", "5":
+	case "p", "5":
+		g.scr = scrProgress
+		return g, nil
+	case "s", "6":
 		g.scr = scrStats
 		return g, nil
-	case "?", "6":
+	case "?", "7":
 		g.scr = scrHelp
 		return g, nil
 	case "tab":
@@ -266,6 +267,8 @@ func (g *Game) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return g.handleLandKey(key)
 	case scrRebirth:
 		return g.handleRebirthKey(key)
+	case scrProgress:
+		return g.handleProgressKey(key)
 	case scrStats:
 		return g.handleStatsKey(key)
 	case scrHelp:
@@ -296,6 +299,17 @@ func (g *Game) handleFarmKey(key string) (tea.Model, tea.Cmd) {
 		if g.cursor+cols < len(st.Plots) {
 			g.cursor += cols
 		}
+	case "u":
+		g.upgradeIdx = g.cursor
+		g.overlay = ovUpgrade
+	case "x":
+		if g.cursor < len(st.Plots) && st.Plots[g.cursor].Critter != "" {
+			reward, snap, ach, err := g.sess.ShooCritter(g.now, g.cursor)
+			g.applyAction(snap, ach, err)
+			if err == nil {
+				g.addNotice("Shooed the " + sanitizeText(st.Plots[g.cursor].Critter) + " (+" + money(reward) + " coins).")
+			}
+		}
 	case "enter", "space", " ", "p":
 		if g.cursor >= len(st.Plots) {
 			return g, nil
@@ -321,7 +335,7 @@ func (g *Game) handleFarmKey(key string) (tea.Model, tea.Cmd) {
 }
 
 func (g *Game) handlePickerKey(key string) (tea.Model, tea.Cmd) {
-	crops := g.content.Crops
+	crops := g.visibleCrops()
 	switch key {
 	case "esc", "q":
 		g.overlay = ovNone
@@ -334,12 +348,49 @@ func (g *Game) handlePickerKey(key string) (tea.Model, tea.Cmd) {
 			g.pickerIdx++
 		}
 	case "enter", "space", " ":
+		if g.pickerIdx >= len(crops) {
+			return g, nil
+		}
 		crop := crops[g.pickerIdx]
+		st := g.snap.State
 		snap, ach, err := g.sess.Plant(g.now, g.cursor, crop.ID)
 		g.applyAction(snap, ach, err)
 		if err == nil {
 			g.overlay = ovNone
-			g.addNotice("Planted " + sanitizeText(crop.Name) + ".")
+			if st.MercyPlantEligible(g.content, crop.ID) {
+				g.addNotice("Planted " + sanitizeText(crop.Name) + " — FREE, the land provides.")
+			} else {
+				g.addNotice("Planted " + sanitizeText(crop.Name) + ".")
+			}
+		}
+	}
+	return g, nil
+}
+
+func (g *Game) handleUpgradeKey(key string) (tea.Model, tea.Cmd) {
+	st := g.snap.State
+	switch key {
+	case "esc", "q":
+		g.overlay = ovNone
+	case "up", "k":
+		if g.upgradeIdx > 0 {
+			g.upgradeIdx--
+		}
+	case "down", "j":
+		if g.upgradeIdx < len(st.Plots)-1 {
+			g.upgradeIdx++
+		}
+	case "h":
+		snap, ach, err := g.sess.UpgradePlotAuto(g.now, g.upgradeIdx, "harvest")
+		g.applyAction(snap, ach, err)
+		if err == nil {
+			g.addNotice("Plot " + itoa(g.upgradeIdx+1) + " now auto-harvests!")
+		}
+	case "s":
+		snap, ach, err := g.sess.UpgradePlotAuto(g.now, g.upgradeIdx, "sow")
+		g.applyAction(snap, ach, err)
+		if err == nil {
+			g.addNotice("Plot " + itoa(g.upgradeIdx+1) + " now auto-sows!")
 		}
 	}
 	return g, nil
@@ -367,10 +418,13 @@ func (g *Game) handleMarketKey(key string) (tea.Model, tea.Cmd) {
 			ach  []string
 			err  error
 		)
-		if it.isZone {
+		switch it.kind {
+		case "zone":
 			snap, ach, err = g.sess.BuyZone(now, it.id)
-		} else {
-			snap, ach, err = g.sess.BuyTool(now, it.id)
+		case "multiplier":
+			snap, ach, err = g.sess.BuyMultiplier(now, it.id)
+		case "strain":
+			snap, ach, err = g.sess.BuySeedUpgrade(now, it.id)
 		}
 		g.applyAction(snap, ach, err)
 		if err == nil {
@@ -393,32 +447,42 @@ func (g *Game) handleLandKey(key string) (tea.Model, tea.Cmd) {
 }
 
 func (g *Game) handleRebirthKey(key string) (tea.Model, tea.Cmd) {
-	ups := g.content.Upgrades
 	switch key {
-	case "up", "k":
-		if g.upgradeIdx > 0 {
-			g.upgradeIdx--
-		}
-	case "down", "j":
-		if g.upgradeIdx < len(ups)-1 {
-			g.upgradeIdx++
-		}
-	case "enter", "space", " ", "b":
-		if g.upgradeIdx >= len(ups) {
-			return g, nil
-		}
-		u := ups[g.upgradeIdx]
-		snap, ach, err := g.sess.BuyUpgrade(g.now, u.ID)
-		g.applyAction(snap, ach, err)
-		if err == nil {
-			g.addNotice(sanitizeText(u.Name) + " is now level " + itoa(g.snap.State.UpgradeLevel(u.ID)) + ".")
-		}
 	case "R":
 		if g.snap.State.CanRebirth(g.content) {
 			g.overlay = ovRebirthConfirm
 		} else {
 			need := g.content.Prestige.MinEarnings
 			g.addNotice("Earn " + money(need) + " coins this run to rebirth (so far: " + money(g.snap.State.RunEarnings) + ").")
+		}
+	}
+	return g, nil
+}
+
+func (g *Game) handleProgressKey(key string) (tea.Model, tea.Cmd) {
+	st := g.snap.State
+	if st.Rebirths < 1 {
+		return g, nil
+	}
+	ups := g.content.Upgrades
+	switch key {
+	case "up", "k":
+		if g.progressIdx > 0 {
+			g.progressIdx--
+		}
+	case "down", "j":
+		if g.progressIdx < len(ups)-1 {
+			g.progressIdx++
+		}
+	case "enter", "space", " ", "b":
+		if g.progressIdx >= len(ups) {
+			return g, nil
+		}
+		u := ups[g.progressIdx]
+		snap, ach, err := g.sess.BuyUpgrade(g.now, u.ID)
+		g.applyAction(snap, ach, err)
+		if err == nil {
+			g.addNotice(sanitizeText(u.Name) + " is now level " + itoa(g.snap.State.UpgradeLevel(u.ID)) + ".")
 		}
 	}
 	return g, nil
@@ -432,7 +496,7 @@ func (g *Game) handleRebirthConfirmKey(key string) (tea.Model, tea.Cmd) {
 		g.overlay = ovNone
 		if err == nil {
 			g.cursor = 0
-			g.addNotice("Reborn! +" + money(gain) + " prestige. The land is fresh again.")
+			g.addNotice("Reborn! +" + money(gain) + " " + g.starseedLabel() + ". The land is fresh again.")
 		}
 	case "n", "N", "esc", "q":
 		g.overlay = ovNone
@@ -441,7 +505,8 @@ func (g *Game) handleRebirthConfirmKey(key string) (tea.Model, tea.Cmd) {
 }
 
 func (g *Game) handleStatsKey(key string) (tea.Model, tea.Cmd) {
-	if key == "t" {
+	switch key {
+	case "t":
 		enabled := !g.snap.State.FlavorEnabled
 		snap, err := g.sess.SetFlavor(g.now, enabled)
 		if err == nil {
@@ -452,11 +517,53 @@ func (g *Game) handleStatsKey(key string) (tea.Model, tea.Cmd) {
 				g.addNotice("Lucky finds disabled.")
 			}
 		}
+	case "n":
+		g.nameInput = g.snap.State.FarmName
+		g.overlay = ovName
 	}
 	return g, nil
 }
 
-// doHarvest sends the harvest intent for plot i.
+func (g *Game) handleNameKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		g.overlay = ovNone
+	case "enter":
+		snap, err := g.sess.SetFarmName(g.now, g.nameInput)
+		if err != nil {
+			g.addNotice("Hmm: " + err.Error() + ".")
+		} else {
+			g.snap = snap
+			g.overlay = ovNone
+			g.addNotice("Your farm is now called " + sanitizeText(g.nameInput) + ".")
+		}
+	case "backspace":
+		runes := []rune(g.nameInput)
+		if len(runes) > 0 {
+			g.nameInput = string(runes[:len(runes)-1])
+		}
+	default:
+		if len(key) == 1 && key[0] >= 32 {
+			g.nameInput += key
+		}
+	}
+	return g, nil
+}
+
+func (g *Game) redeemGift() (tea.Model, tea.Cmd) {
+	res, snap, ach, err := g.sess.RedeemGift(g.now)
+	g.applyAction(snap, ach, err)
+	if err != nil {
+		return g, nil
+	}
+	if res.Starseeds > 0 {
+		g.addNotice("📦 Parcel opened! +" + money(res.Starseeds) + " " + g.starseedLabel() + "!")
+	} else {
+		g.addNotice("📦 Parcel opened! +" + money(res.Coins) + " coins!")
+	}
+	return g, nil
+}
+
 func (g *Game) doHarvest(i int) {
 	res, snap, ach, err := g.sess.Harvest(g.now, i)
 	g.applyAction(snap, ach, err)
@@ -468,11 +575,32 @@ func (g *Game) doHarvest(i int) {
 	if crop != nil {
 		name = crop.Name
 	}
+	if res.Golden {
+		g.addNotice("✨ GOLDEN HARVEST! " + sanitizeText(name) + " (+" + money(res.Payout) + ")")
+		return
+	}
+	if res.Failed && crop != nil {
+		g.addNotice("💥 " + sanitizeText(name) + " failed — salvaged " + money(res.Payout) + " coins (" + salvageFractionLabel(g.snap.State.SeedUpgradeLevel(crop.ID)) + " of normal).")
+		return
+	}
 	text := "Harvested " + sanitizeText(name) + " (+" + money(res.Payout) + ")"
 	if res.Discovery > 0 {
 		text += " and found " + money(res.Discovery) + " coins in the soil!"
 	}
 	g.addNotice(text)
+}
+
+func salvageFractionLabel(strainLevel int) string {
+	switch strainLevel {
+	case 0:
+		return "1/8"
+	case 1:
+		return "1/4"
+	case 2:
+		return "1/2"
+	default:
+		return "3/4"
+	}
 }
 
 func (g *Game) harvestAllReady() {
@@ -499,8 +627,6 @@ func (g *Game) harvestAllReady() {
 	}
 }
 
-// applyAction folds an intent result into the model: snapshot refresh,
-// achievement toasts, and a friendly explanation when the engine refused.
 func (g *Game) applyAction(snap game.Snapshot, ach []string, err error) {
 	if err != nil {
 		if err == game.ErrSessionClosed {
@@ -526,7 +652,6 @@ func (g *Game) achievementNotices(ids []string) {
 	}
 }
 
-// eventNotices surfaces live-tick events (crops maturing, auto-harvests).
 func (g *Game) eventNotices(ev sim.Events) {
 	for id, n := range ev.Matured {
 		name := id
@@ -540,10 +665,28 @@ func (g *Game) eventNotices(ev sim.Events) {
 		}
 	}
 	if ev.AutoCoins > 0 {
-		g.addNotice("🤖 The auto-harvester gathered crops (+" + money(ev.AutoCoins) + ").")
+		g.addNotice("⚙ Auto-plots gathered crops (+" + money(ev.AutoCoins) + ").")
 	}
-	if ev.DiscoveryCoins > 0 && len(ev.AutoHarvested) > 0 {
-		g.addNotice("✨ It also found " + money(ev.DiscoveryCoins) + " spare coins.")
+	if ev.GoldenHarvests > 0 {
+		g.addNotice("✨ " + itoa(ev.GoldenHarvests) + " golden harvest(s)!")
+	}
+	for id, n := range ev.FailedHarvests {
+		name := id
+		if crop := g.content.Crop(id); crop != nil {
+			name = crop.Name
+		}
+		g.addNotice("💥 " + itoa(n) + "× " + sanitizeText(name) + " failed while you were away.")
+	}
+	if ev.GiftArrived {
+		g.addNotice("📦 A parcel waits at the gate — press g to open it.")
+	}
+	if ev.EventStarted != "" {
+		if e := g.content.EventByID(ev.EventStarted); e != nil {
+			g.addNotice("📰 " + sanitizeText(e.Name) + ": " + sanitizeText(e.Description))
+		}
+	}
+	for _, c := range ev.CritterVisits {
+		g.addNotice("A " + sanitizeText(c) + " visited an empty plot.")
 	}
 	g.achievementNotices(ev.Achievements)
 }
@@ -565,28 +708,47 @@ func (g *Game) pruneNotices() {
 	g.notices = kept
 }
 
-// marketItem is a buyable row on the market screen.
+func (g *Game) starseedLabel() string { return g.content.StarseedLabel() }
+
+func (g *Game) visibleCrops() []content.Crop {
+	return sim.VisibleCrops(g.snap.State, g.content)
+}
+
 type marketItem struct {
 	id, name, desc string
 	cost           int64
-	isZone         bool
+	kind           string // multiplier, strain, zone
 	owned          bool
 	locked         bool
 	gate           content.Unlock
+	level, maxLvl  int
 }
 
 func (g *Game) marketItems() []marketItem {
 	st := g.snap.State
 	var items []marketItem
-	for _, t := range g.content.Tools {
+	for i := range g.content.Multipliers {
+		m := &g.content.Multipliers[i]
+		lvl := st.MultiplierLevel(m.ID)
 		items = append(items, marketItem{
-			id: t.ID, name: t.Name, desc: t.Description, cost: t.Cost,
-			owned: st.Tools[t.ID], locked: !st.Unlocked(t.Unlock), gate: t.Unlock,
+			id: m.ID, name: m.Name, desc: m.Description,
+			cost: st.MultiplierCost(m), kind: "multiplier",
+			locked: false, level: lvl, maxLvl: m.MaxLevel,
+		})
+	}
+	for i := range g.content.SeedUpgrades {
+		su := &g.content.SeedUpgrades[i]
+		crop := g.content.Crop(su.CropID)
+		locked := crop != nil && !st.Unlocked(crop.Unlock)
+		items = append(items, marketItem{
+			id: su.ID, name: su.Name, desc: su.Description,
+			cost: st.SeedUpgradeCost(su), kind: "strain",
+			locked: locked, level: st.SeedUpgradeLevel(su.CropID), maxLvl: su.MaxLevel,
 		})
 	}
 	for _, z := range g.content.Zones {
 		items = append(items, marketItem{
-			id: z.ID, name: z.Name, desc: z.Description, cost: z.Cost, isZone: true,
+			id: z.ID, name: z.Name, desc: z.Description, cost: z.Cost, kind: "zone",
 			owned: st.Zones[z.ID], locked: !st.Unlocked(z.Unlock), gate: z.Unlock,
 		})
 	}

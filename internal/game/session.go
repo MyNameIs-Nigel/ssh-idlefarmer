@@ -11,9 +11,7 @@ import (
 // actor has stopped (the player was kicked or the server is shutting down).
 var ErrSessionClosed = errors.New("session is closed")
 
-// Session is one terminal's handle onto a save actor. The UI sends intents
-// through it; every game mutation happens on the actor goroutine against
-// authoritative state, and the UI only ever sees deep-copied snapshots.
+// Session is one terminal's handle onto a save actor.
 type Session struct {
 	id       uint64
 	actor    *actor
@@ -22,20 +20,15 @@ type Session struct {
 	kickOnce sync.Once
 }
 
-// Snapshot is a point-in-time deep copy of the save for rendering. Mutating
-// it has no effect on the game.
+// Snapshot is a point-in-time deep copy of the save for rendering.
 type Snapshot struct {
 	State *sim.State
 	Now   int64
 }
 
-// Kicked yields the takeover/shutdown notice for this session. The channel
-// delivers at most one reason and is then closed; it also closes (without a
-// reason) when the session detaches normally, so listeners never leak.
+// Kicked yields the takeover/shutdown notice for this session.
 func (s *Session) Kicked() <-chan string { return s.kicked }
 
-// deliverKick is safe from any goroutine; an empty reason just closes the
-// channel (normal detach).
 func (s *Session) deliverKick(reason string) {
 	s.kickOnce.Do(func() {
 		if reason != "" {
@@ -48,16 +41,13 @@ func (s *Session) deliverKick(reason string) {
 	})
 }
 
-// Detach persists the save and releases this session. The actor stops once
-// no session is attached. Safe to call more than once.
+// Detach persists the save and releases this session.
 func (s *Session) Detach() {
 	s.actor.mgr.detach(s)
 	s.deliverKick("")
 }
 
-// Advance simulates up to now and returns a fresh snapshot plus whatever
-// happened. This is the live tick; it is the same engine path as offline
-// catch-up.
+// Advance simulates up to now and returns a fresh snapshot plus whatever happened.
 func (s *Session) Advance(now int64) (Snapshot, sim.Events, error) {
 	var snap Snapshot
 	var ev sim.Events
@@ -74,9 +64,6 @@ func (s *Session) Advance(now int64) (Snapshot, sim.Events, error) {
 	return snap, ev, nil
 }
 
-// intent runs a mutating action on the actor goroutine: advance to now,
-// apply, re-check achievements, snapshot. Returns the achievements newly
-// earned by the action itself.
 func (s *Session) intent(now int64, apply func(st *sim.State) error) (Snapshot, []string, error) {
 	var snap Snapshot
 	var newly []string
@@ -129,13 +116,6 @@ func (s *Session) BuyPlot(now int64) (int64, Snapshot, []string, error) {
 	return cost, snap, newly, err
 }
 
-// BuyTool purchases a run-scoped automation tool.
-func (s *Session) BuyTool(now int64, id string) (Snapshot, []string, error) {
-	return s.intent(now, func(st *sim.State) error {
-		return sim.BuyTool(st, s.actor.content(), id)
-	})
-}
-
 // BuyZone purchases a zone expansion.
 func (s *Session) BuyZone(now int64, id string) (Snapshot, []string, error) {
 	return s.intent(now, func(st *sim.State) error {
@@ -143,14 +123,65 @@ func (s *Session) BuyZone(now int64, id string) (Snapshot, []string, error) {
 	})
 }
 
-// BuyUpgrade spends prestige currency on a permanent upgrade.
+// BuyMultiplier purchases a run-scoped market multiplier.
+func (s *Session) BuyMultiplier(now int64, id string) (Snapshot, []string, error) {
+	return s.intent(now, func(st *sim.State) error {
+		return sim.BuyMultiplier(st, s.actor.content(), id)
+	})
+}
+
+// BuySeedUpgrade purchases a Hardier Strain level.
+func (s *Session) BuySeedUpgrade(now int64, id string) (Snapshot, []string, error) {
+	return s.intent(now, func(st *sim.State) error {
+		return sim.BuySeedUpgrade(st, s.actor.content(), id)
+	})
+}
+
+// UpgradePlotAuto buys auto-harvest or auto-sow for a plot.
+func (s *Session) UpgradePlotAuto(now int64, plot int, kind string) (Snapshot, []string, error) {
+	return s.intent(now, func(st *sim.State) error {
+		return sim.UpgradePlotAuto(st, s.actor.content(), plot, kind)
+	})
+}
+
+// BuyUpgrade spends Starseeds on a permanent upgrade.
 func (s *Session) BuyUpgrade(now int64, id string) (Snapshot, []string, error) {
 	return s.intent(now, func(st *sim.State) error {
 		return sim.BuyUpgrade(st, s.actor.content(), id)
 	})
 }
 
-// Rebirth resets the run for prestige currency, returning what was gained.
+// RedeemGift opens the pending parcel.
+func (s *Session) RedeemGift(now int64) (sim.GiftResult, Snapshot, []string, error) {
+	var res sim.GiftResult
+	snap, newly, err := s.intent(now, func(st *sim.State) error {
+		var gerr error
+		res, gerr = sim.RedeemGift(st, s.actor.content())
+		return gerr
+	})
+	return res, snap, newly, err
+}
+
+// ShooCritter removes a critter from a plot.
+func (s *Session) ShooCritter(now int64, plot int) (int64, Snapshot, []string, error) {
+	var reward int64
+	snap, newly, err := s.intent(now, func(st *sim.State) error {
+		var serr error
+		reward, serr = sim.ShooCritter(st, s.actor.content(), plot)
+		return serr
+	})
+	return reward, snap, newly, err
+}
+
+// SetFarmName sets the farm's display name.
+func (s *Session) SetFarmName(now int64, name string) (Snapshot, error) {
+	snap, _, err := s.intent(now, func(st *sim.State) error {
+		return sim.SetFarmName(st, name)
+	})
+	return snap, err
+}
+
+// Rebirth resets the run for Starseeds.
 func (s *Session) Rebirth(now int64) (int64, Snapshot, []string, error) {
 	var gain int64
 	snap, newly, err := s.intent(now, func(st *sim.State) error {

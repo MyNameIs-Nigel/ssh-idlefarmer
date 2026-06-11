@@ -159,9 +159,9 @@ func TestScreenNavigationAndHelp(t *testing.T) {
 	g, _ = tick(t, g, base)
 
 	screens := map[string]string{
-		"m": "Tools & Zones",
+		"m": "Multipliers",
 		"l": "Your land",
-		"r": "Permanent upgrades",
+		"r": "Next rebirth unlocks",
 		"s": "Achievements",
 		"?": "How it works",
 		"f": "Plot 1",
@@ -267,7 +267,7 @@ func TestRebirthPreviewConfirmAndReset(t *testing.T) {
 	g = press(t, g, "x") // dismiss the away/achievement overlay if shown
 	g = press(t, g, "r")
 	out := view(g)
-	if !strings.Contains(out, "50 prestige") { // isqrt(250000/100)
+	if !strings.Contains(out, "50 Starseeds") { // isqrt(250000/100)
 		t.Fatalf("rebirth preview should show the gain, got:\n%s", out)
 	}
 

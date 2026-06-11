@@ -177,10 +177,11 @@ func TestRiskyCropDistributionUsesConfiguredOutcomes(t *testing.T) {
 		}
 		outcomes[res.Payout]++
 	}
-	if len(outcomes) != 3 {
-		t.Fatalf("expected 3 distinct payouts (fail/normal/bonus), got %v", outcomes)
+	if len(outcomes) != 2 {
+		t.Fatalf("expected 2 distinct payouts (salvage/full), got %v", outcomes)
 	}
-	for _, want := range []int64{25, 140, 320} {
+	salvage := int64(140 / 8) // 17
+	for _, want := range []int64{salvage, 140} {
 		if outcomes[want] == 0 {
 			t.Fatalf("payout %d never occurred in 500 rolls: %v", want, outcomes)
 		}
@@ -231,9 +232,7 @@ func TestAutoHarvesterGathersOffline(t *testing.T) {
 	s.FlavorEnabled = false
 	s.Coins = 10_000
 	s.LifetimeEarnings = 10_000
-	if err := BuyTool(s, c, "auto_harvester"); err != nil {
-		t.Fatal(err)
-	}
+	s.Plots[0].AutoHarvest = true
 	if err := Plant(s, c, 0, "turnip", 1000); err != nil {
 		t.Fatal(err)
 	}
@@ -258,11 +257,8 @@ func TestAutoSowerReplantsRepeatedly(t *testing.T) {
 	s.FlavorEnabled = false
 	s.Coins = 20_000
 	s.LifetimeEarnings = 20_000
-	for _, tool := range []string{"auto_harvester", "auto_sower"} {
-		if err := BuyTool(s, c, tool); err != nil {
-			t.Fatal(err)
-		}
-	}
+	s.Plots[0].AutoHarvest = true
+	s.Plots[0].AutoSow = true
 	if err := Plant(s, c, 0, "turnip", 0); err != nil {
 		t.Fatal(err)
 	}
@@ -291,11 +287,8 @@ func TestVeryLongAutoFarmCatchUpIsBoundedAndExact(t *testing.T) {
 		s.FlavorEnabled = false
 		s.Coins = 20_000
 		s.LifetimeEarnings = 20_000
-		for _, tool := range []string{"auto_harvester", "auto_sower"} {
-			if err := BuyTool(s, c, tool); err != nil {
-				t.Fatal(err)
-			}
-		}
+		s.Plots[0].AutoHarvest = true
+		s.Plots[0].AutoSow = true
 		if err := Plant(s, c, 0, "turnip", 0); err != nil {
 			t.Fatal(err)
 		}
@@ -307,7 +300,7 @@ func TestVeryLongAutoFarmCatchUpIsBoundedAndExact(t *testing.T) {
 	// Far past the per-plot cycle cap: (cap + 1234) turnip cycles.
 	cycles := int64(autoCycleCap + 1234)
 	s := run(cycles * 60)
-	coinsBefore := int64(20_000) - 1500 - 4000 - 5
+	coinsBefore := int64(20_000) - 5
 	want := coinsBefore + cycles*(9-5)
 	if s.Coins != want {
 		t.Fatalf("batched catch-up coins = %d, want %d", s.Coins, want)
@@ -335,7 +328,7 @@ func TestPrestigeMathAndRebirth(t *testing.T) {
 		t.Fatalf("prestige gain = %d, want 50", got)
 	}
 	s.Coins = 9999
-	s.Tools["auto_harvester"] = true
+	s.Plots[0].AutoHarvest = true
 	s.Zones["greenhouse"] = true
 	s.Plots = append(s.Plots, Plot{Crop: "turnip", PlantedAt: 100})
 	s.PurchasedPlots = 1
@@ -350,8 +343,11 @@ func TestPrestigeMathAndRebirth(t *testing.T) {
 	if s.Coins != 25 || len(s.Plots) != 3 || s.PurchasedPlots != 0 {
 		t.Fatal("run state did not reset")
 	}
-	if len(s.Tools) != 0 || len(s.Zones) != 0 || s.RunEarnings != 0 {
+	if len(s.Zones) != 0 || len(s.Multipliers) != 0 || s.RunEarnings != 0 {
 		t.Fatal("run-scoped purchases must reset on rebirth")
+	}
+	if s.Plots[0].AutoHarvest {
+		t.Fatal("plot automation must reset on rebirth")
 	}
 	if s.Rebirths != 1 || s.LifetimeEarnings != 250_000 {
 		t.Fatal("lifetime stats must survive rebirth")
@@ -390,7 +386,7 @@ func TestUpgradesAffectTheNextRun(t *testing.T) {
 	if got := s.GrowSeconds(c, turnip); got != 54 { // 60 * 90%
 		t.Fatalf("grow seconds = %d, want 54", got)
 	}
-	if got := s.sellMultiplied(c, 100); got != 115 {
+	if got := s.sellMultiplied(c, 100, ""); got != 115 {
 		t.Fatalf("sell multiplied = %d, want 115", got)
 	}
 	if got := s.NextPlotCost(c); got != 45 { // 50 * 90%
@@ -498,23 +494,26 @@ func TestZonePurchaseAddsPlotsAndUnlocksCrops(t *testing.T) {
 	}
 }
 
-func TestToolGatingAndAffordability(t *testing.T) {
+func TestPlotAutoGatingAndAffordability(t *testing.T) {
 	c := testContent(t)
 	s := newTestState(t, c)
 
-	if err := BuyTool(s, c, "auto_harvester"); err != ErrLocked {
-		t.Fatalf("expected ErrLocked before earnings gate, got %v", err)
-	}
-	s.LifetimeEarnings = 1000
-	if err := BuyTool(s, c, "auto_harvester"); err != ErrCantAfford {
+	if err := UpgradePlotAuto(s, c, 0, "harvest"); err != ErrCantAfford {
 		t.Fatalf("expected ErrCantAfford, got %v", err)
 	}
-	s.Coins = 1500
-	if err := BuyTool(s, c, "auto_harvester"); err != nil {
+	s.Coins = 1000
+	if err := UpgradePlotAuto(s, c, 0, "harvest"); err != nil {
 		t.Fatal(err)
 	}
-	if err := BuyTool(s, c, "auto_harvester"); err != ErrAlreadyOwned {
+	if err := UpgradePlotAuto(s, c, 0, "harvest"); err != ErrAlreadyOwned {
 		t.Fatalf("expected ErrAlreadyOwned, got %v", err)
+	}
+	if err := UpgradePlotAuto(s, c, 0, "sow"); err != ErrLocked {
+		t.Fatalf("expected ErrLocked before earnings gate for sow, got %v", err)
+	}
+	s.LifetimeEarnings = 5000
+	if err := UpgradePlotAuto(s, c, 0, "sow"); err != ErrCantAfford {
+		t.Fatalf("expected ErrCantAfford for sow, got %v", err)
 	}
 }
 
@@ -671,4 +670,132 @@ func TestSaturatingMoneyNeverOverflows(t *testing.T) {
 		t.Fatalf("expected saturation at MaxInt64, got %d", s.Coins)
 	}
 	_ = c
+}
+
+func TestMercyPlantWhenBrokeAndEmpty(t *testing.T) {
+	c := testContent(t)
+	s := newTestState(t, c)
+	s.Coins = 2
+	if err := Plant(s, c, 0, "turnip", 1000); err != nil {
+		t.Fatalf("mercy plant: %v", err)
+	}
+	if s.Coins != 2 {
+		t.Fatalf("mercy plant should be free, coins = %d", s.Coins)
+	}
+	if err := Plant(s, c, 1, "pumpkin", 1000); err != ErrCantAfford {
+		t.Fatalf("only cheapest crop is free, got %v", err)
+	}
+}
+
+func TestPayloadUpgradeV2ToV3MigratesAutoTools(t *testing.T) {
+	v2 := []byte(`{"version":2,"rng":1,"updated_at":100,"coins":50,` +
+		`"plots":[{},{}],"tools":{"auto_harvester":true,"auto_sower":true},` +
+		`"run_earnings":0}`)
+	up, err := DecodeState(v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up.Version != StateVersion {
+		t.Fatalf("version = %d, want %d", up.Version, StateVersion)
+	}
+	for i := range up.Plots {
+		if !up.Plots[i].AutoHarvest || !up.Plots[i].AutoSow {
+			t.Fatalf("plot %d missing migrated automation flags", i)
+		}
+	}
+}
+
+func TestVisibleCropsHidesFuturePrestigeTiers(t *testing.T) {
+	c, err := content.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(c, 1, 0)
+	visible := VisibleCrops(s, c)
+	for _, crop := range visible {
+		if crop.Unlock.Kind == "prestige" && crop.Unlock.Value > 1 {
+			t.Fatalf("rebirth-0 save should not see %q (tier %d)", crop.ID, crop.Unlock.Value)
+		}
+	}
+	s.Rebirths = 1
+	visible = VisibleCrops(s, c)
+	found := false
+	for _, crop := range visible {
+		if crop.ID == "frostplum" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("rebirth 1 should preview frostplum as locked")
+	}
+}
+
+func TestProfitPerSecondIncreasesWithGrowTime(t *testing.T) {
+	c, err := content.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	type row struct {
+		id   string
+		grow int64
+		pps  float64
+	}
+	var rows []row
+	for _, crop := range c.Crops {
+		if crop.Unlock.Kind != "start" && crop.Unlock.Kind != "earnings" {
+			continue
+		}
+		var pps float64
+		if crop.Archetype == "risky" {
+			failPct := float64(crop.FailChancePct)
+			salvage := float64(crop.SellValue) / 8
+			ev := (failPct*salvage + (100-failPct)*float64(crop.SellValue)) / 100
+			pps = (ev - float64(crop.SeedCost)) / float64(crop.GrowSeconds)
+		} else {
+			pps = float64(crop.SellValue-crop.SeedCost) / float64(crop.GrowSeconds)
+		}
+		rows = append(rows, row{crop.ID, crop.GrowSeconds, pps})
+	}
+	for i := 0; i < len(rows); i++ {
+		for j := i + 1; j < len(rows); j++ {
+			if rows[i].grow >= rows[j].grow {
+				continue
+			}
+			if rows[j].pps+1e-9 < rows[i].pps {
+				t.Fatalf("slower %s (%.4f/s) should beat faster %s (%.4f/s)",
+					rows[j].id, rows[j].pps, rows[i].id, rows[i].pps)
+			}
+		}
+	}
+}
+
+func TestGiftRedeemAndCap(t *testing.T) {
+	c := testContent(t)
+	s := newTestState(t, c)
+	if _, err := RedeemGift(s, c); err != ErrNoGift {
+		t.Fatalf("expected ErrNoGift, got %v", err)
+	}
+	s.GiftPending = true
+	res, err := RedeemGift(s, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Coins < c.Gifts.CoinRewardFloor {
+		t.Fatalf("gift coins %d below floor", res.Coins)
+	}
+	if s.GiftPending {
+		t.Fatal("gift should be consumed")
+	}
+}
+
+func TestSalvageUpgradeImprovesPayout(t *testing.T) {
+	c := testContent(t)
+	s := newTestState(t, c)
+	crop := c.Crop("gamble")
+	base := s.SalvageValue(c, crop)
+	s.SeedUpgrades["gamble"] = 3
+	upgraded := s.SalvageValue(c, crop)
+	if upgraded <= base {
+		t.Fatalf("salvage should improve: %d -> %d", base, upgraded)
+	}
 }

@@ -1,32 +1,29 @@
 # Tunable balance for ssh-idlefarmer. All money values are integer coins.
-# Multipliers are expressed in basis points-style integer percentages so the
-# engine never touches floating point for balances.
 
 [start]
-coins = 25          # starting wallet for a brand-new run
-plots = 3           # plots a fresh farm begins with
+coins = 25
+plots = 3
 
 [land]
-# Cost of the Nth additional plot: base * (growth_pct/100)^(owned - start_plots),
-# computed with integer math. Each plot costs more than the last.
 base_plot_cost = 50
-growth_pct = 170          # each plot costs 1.7x the previous one
-max_plots = 24            # hard cap on farm size (zones add more)
+growth_pct = 170
+max_plots = 24
 
 [prestige]
-# Prestige earned on rebirth: isqrt(lifetime_run_earnings / divisor).
-# Rebirth is allowed once at least min_earnings has been earned this run.
 divisor = 100
 min_earnings = 10000
 
-# Permanent upgrades bought with prestige currency. Effects are integer
-# percentages applied multiplicatively per level.
+[labels]
+starseed_name = "Starseeds"
+starseed_desc = "Cosmic seeds earned when a life returns to the soil."
+
+# Permanent upgrades bought with Starseeds (Progress tab).
 [[upgrade]]
 id = "growth"
 name = "Rich Soil"
 description = "Crops grow 10% faster per level."
 cost = 2
-cost_growth_pct = 200     # each level costs 2x the previous
+cost_growth_pct = 200
 max_level = 5
 effect = "grow_speed_pct"
 effect_value = 10
@@ -61,23 +58,75 @@ max_level = 4
 effect = "plot_discount_pct"
 effect_value = 10
 
-# Tools are quality-of-life automation bought with coins during a run.
-# They reset on rebirth (they are run-scoped).
-[[tool]]
-id = "auto_harvester"
-name = "Auto-Harvester"
-description = "Harvests ripe crops for you, even while you're away."
-cost = 1500
-unlock = { kind = "earnings", value = 1000 }
+[[upgrade]]
+id = "gift_magnet"
+name = "Gift Magnet"
+description = "Parcels arrive 20% more often per level."
+cost = 4
+cost_growth_pct = 200
+max_level = 3
+effect = "gift_rate_pct"
+effect_value = 20
 
-[[tool]]
-id = "auto_sower"
-name = "Auto-Sower"
-description = "Replants whatever the Auto-Harvester just gathered."
-cost = 4000
-unlock = { kind = "earnings", value = 5000 }
+[[upgrade]]
+id = "stargazer"
+name = "Stargazer's Almanac"
+description = "Random events 15% more frequent and 10% longer per level."
+cost = 5
+cost_growth_pct = 200
+max_level = 3
+effect = "event_rate_pct"
+effect_value = 15
 
-# Zones expand the farm. Run-scoped: they reset on rebirth.
+# Run-scoped multipliers (Market tab, bought with coins).
+[[multiplier]]
+id = "fertilizer"
+name = "Fertilizer"
+description = "Crops grow 8% faster per level this run."
+cost = 200
+cost_growth_pct = 250
+max_level = 3
+effect = "grow_speed_pct"
+effect_value = 8
+
+[[multiplier]]
+id = "merchant_scale"
+name = "Merchant's Scale"
+description = "Crops sell for 10% more per level this run."
+cost = 300
+cost_growth_pct = 250
+max_level = 3
+effect = "sell_bonus_pct"
+effect_value = 10
+
+# Hardier Strain upgrades for risky crops (Market tab).
+[[seed_upgrade]]
+id = "glimmercorn_strain"
+crop_id = "glimmercorn"
+name = "Hardier Glimmercorn"
+description = "Failed harvests salvage more (1/4 → 1/2 → 3/4 of sell value)."
+cost = 150
+cost_growth_pct = 200
+max_level = 3
+
+[[seed_upgrade]]
+id = "moonberry_strain"
+crop_id = "moonberry"
+name = "Hardier Moonberry"
+description = "Failed harvests salvage more (1/4 → 1/2 → 3/4 of sell value)."
+cost = 400
+cost_growth_pct = 200
+max_level = 3
+
+[[seed_upgrade]]
+id = "thunderpod_strain"
+crop_id = "thunderpod"
+name = "Hardier Thunderpod"
+description = "Failed harvests salvage more (1/4 → 1/2 → 3/4 of sell value)."
+cost = 250
+cost_growth_pct = 200
+max_level = 3
+
 [[zone]]
 id = "greenhouse"
 name = "Greenhouse"
@@ -86,12 +135,61 @@ cost = 25000
 extra_plots = 6
 unlock = { kind = "earnings", value = 15000 }
 
-# Achievements are positive-only milestones. Conditions:
-#   kind = "harvests", value     total lifetime harvests
-#   kind = "earnings", value     total lifetime earnings (across rebirths)
-#   kind = "plots", value        plots owned at once
-#   kind = "rebirths", value     total rebirths
-#   kind = "balance", value      wallet balance reached
+[events]
+min_interval_sec = 900
+max_interval_sec = 1500
+min_duration_sec = 90
+max_duration_sec = 180
+
+[[event]]
+id = "market_day"
+name = "Market Day"
+description = "Seed prices tumble!"
+effect = "seed_discount_pct"
+effect_value = 40
+
+[[event]]
+id = "bumper_demand"
+name = "Bumper Demand"
+description = "Buyers pay premium prices!"
+effect = "sell_bonus_pct"
+effect_value = 30
+
+[[event]]
+id = "warm_front"
+name = "Warm Front"
+description = "Crops grow twice as fast!"
+effect = "grow_speed_pct"
+effect_value = 50
+
+[plot_automation]
+auto_harvest_base_cost = 600
+auto_harvest_growth_pct = 150
+auto_sow_cost = 1400
+auto_sow_min_earnings = 5000
+
+[gifts]
+online_interval_sec = 1200
+offline_interval_sec = 18000
+starseed_chance_pct = 20
+coin_reward_floor = 8
+coin_reward_ceiling = 5000
+
+[golden_harvest]
+chance_pct = 1
+multiplier = 100
+
+[moon]
+cycle_days = 28
+full_moon_sell_bonus_pct = 15
+moonberry_crop_id = "moonberry"
+
+[critters]
+visit_chance_pct = 2
+shoo_reward_min = 3
+shoo_reward_max = 12
+kind = ["crow", "rabbit", "mole"]
+
 [[achievement]]
 id = "first_sprout"
 name = "First Sprout"
@@ -128,10 +226,32 @@ name = "Born Again"
 description = "Rebirth for the first time."
 condition = { kind = "rebirths", value = 1 }
 
-# Ambient flavor: small lucky discoveries on harvest. Never negative,
-# toggleable, and driven by the save's seeded RNG so it is reproducible.
+[[headline]]
+text = "LOCAL FARMER REPORTS UNUSUALLY LARGE TURNIP"
+
+[[headline]]
+text = "WEATHER: MILD WITH A CHANCE OF MOONBERRIES"
+
+[[headline]]
+text = "MARKET DAY DECLARED — SEED PRICES TUMBLE"
+
+[[headline]]
+text = "BUYERS FLOCK TO REGION AS BUMPER DEMAND HITS"
+
+[[headline]]
+text = "WARM FRONT SWEEPS VALLEY — CROPS RACE TO RIPEN"
+
+[[headline]]
+text = "PARCEL DELIVERY UP ACROSS THE COUNTY"
+
+[[headline]]
+text = "FULL MOON TONIGHT — LUNAR CROPS SHINE BRIGHTER"
+
+[[headline]]
+text = "CROW SPOTTED NEAR FENCE LINE, FARMERS UNFAZED"
+
 [flavor]
 enabled = true
-discovery_chance_pct = 4       # chance per harvest of a small find
-discovery_min = 5              # coins found, scaled by prestige level
+discovery_chance_pct = 4
+discovery_min = 5
 discovery_max = 40

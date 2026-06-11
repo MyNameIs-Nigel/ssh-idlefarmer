@@ -15,7 +15,7 @@ name = "Pumpkin"
 archetype = "slow"
 seed_cost = 80
 grow_seconds = 3600
-sell_value = 230
+sell_value = 440
 unlock = { kind = "start" }
 
 [[crop]]
@@ -26,9 +26,6 @@ seed_cost = 40
 grow_seconds = 600
 sell_value = 140
 fail_chance_pct = 25
-fail_value = 25
-bonus_chance_pct = 10
-bonus_value = 320
 unlock = { kind = "earnings", value = 500 }
 
 [[crop]]

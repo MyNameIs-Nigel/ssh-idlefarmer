@@ -7,14 +7,15 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/mynameis-nigel/ssh-idlefarmer/internal/content"
+	"github.com/mynameis-nigel/ssh-idlefarmer/internal/sim"
 )
 
-// Cozy palette: soft greens and earth tones, nothing alarming.
 var (
 	styleTitle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("114"))
 	styleHeader   = lipgloss.NewStyle().Foreground(lipgloss.Color("180"))
 	styleNavOn    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229")).Background(lipgloss.Color("22")).Padding(0, 1)
 	styleNavOff   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
+	styleNavLock  = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Padding(0, 1)
 	styleHint     = lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
 	styleNotice   = lipgloss.NewStyle().Foreground(lipgloss.Color("222"))
 	styleReady    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("120"))
@@ -27,6 +28,8 @@ var (
 	styleBox      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("65")).Padding(1, 2)
 	stylePlotCard = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1).Width(20)
 	stylePlotSel  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("114")).Padding(0, 1).Width(20)
+	styleBanner   = lipgloss.NewStyle().Foreground(lipgloss.Color("222")).Italic(true)
+	styleEvent    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229")).Background(lipgloss.Color("54")).Padding(0, 1)
 )
 
 func (g *Game) View() tea.View {
@@ -39,7 +42,6 @@ func (g *Game) View() tea.View {
 	return g.fullscreen(g.composeCanvas(g.screenBody(), false))
 }
 
-// overlayBox renders the active overlay as a boxed modal.
 func (g *Game) overlayBox() string {
 	switch g.overlay {
 	case ovOnboarding:
@@ -48,15 +50,18 @@ func (g *Game) overlayBox() string {
 		return g.viewAway()
 	case ovPicker:
 		return g.viewPicker()
+	case ovUpgrade:
+		return g.viewUpgrade()
 	case ovRebirthConfirm:
 		return g.viewRebirthConfirm()
+	case ovName:
+		return g.viewName()
 	case ovKicked:
 		return g.viewKicked()
 	}
 	return ""
 }
 
-// screenBody renders the active screen's content.
 func (g *Game) screenBody() string {
 	switch g.scr {
 	case scrFarm:
@@ -67,6 +72,8 @@ func (g *Game) screenBody() string {
 		return g.viewLand()
 	case scrRebirth:
 		return g.viewRebirth()
+	case scrProgress:
+		return g.viewProgress()
 	case scrStats:
 		return g.viewStats()
 	case scrHelp:
@@ -77,32 +84,97 @@ func (g *Game) screenBody() string {
 
 func (g *Game) viewHeader() string {
 	st := g.snap.State
-	left := styleTitle.Render("🌾 ssh-idlefarmer") + styleHeader.Render("  ·  "+sanitizeText(g.id.Slot))
+	title := "🌾 ssh-idlefarmer"
+	if st.FarmName != "" {
+		title = "🌾 " + sanitizeText(st.FarmName)
+	}
+	left := styleTitle.Render(title) + styleHeader.Render("  ·  "+sanitizeText(g.id.Slot))
+	left += styleHint.Render("  " + moonGlyph(st, g.content) + " " + st.MoonPhaseName(g.content))
 	right := styleValue.Render("⛀ " + money(st.Coins) + " coins")
 	if st.Rebirths > 0 || st.PrestigeCurrency > 0 {
-		right += styleHeader.Render("  ✦ " + money(st.PrestigeCurrency) + " prestige")
+		right += styleHeader.Render("  ✦ " + money(st.PrestigeCurrency) + " " + g.starseedLabel())
 	}
 	gap := g.contentWidth() - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
-	return left + strings.Repeat(" ", gap) + right
+	header := left + strings.Repeat(" ", gap) + right
+
+	banner := g.viewBanner()
+	if banner != "" {
+		header += "\n" + banner
+	}
+	return header
+}
+
+func moonGlyph(st *sim.State, c *content.Content) string {
+	switch st.MoonPhaseName(c) {
+	case "Full Moon":
+		return "🌕"
+	case "New Moon":
+		return "🌑"
+	default:
+		return "🌙"
+	}
+}
+
+func (g *Game) viewBanner() string {
+	st := g.snap.State
+	var parts []string
+	if st.GiftPending {
+		parts = append(parts, styleReady.Render("📦 A parcel waits at the gate — press g"))
+	}
+	if st.EventActive(g.now) {
+		if ev := g.content.EventByID(st.EventID); ev != nil {
+			left := st.EventEndsAt - g.now
+			parts = append(parts, styleEvent.Render("⚡ "+sanitizeText(ev.Name)+" ("+duration(left)+")"))
+		}
+	}
+	if len(parts) == 0 {
+		return styleBanner.Render("📰 The Daily Furrow: " + g.dailyHeadline())
+	}
+	return strings.Join(parts, "  ")
+}
+
+func (g *Game) dailyHeadline() string {
+	st := g.snap.State
+	if st.EventActive(g.now) {
+		if ev := g.content.EventByID(st.EventID); ev != nil {
+			return strings.ToUpper(sanitizeText(ev.Name)) + " — " + strings.ToUpper(sanitizeText(ev.Description))
+		}
+	}
+	if st.GiftPending {
+		return "PARCEL DELIVERY UP ACROSS THE COUNTY"
+	}
+	if len(g.content.Headlines) == 0 {
+		return "ALL QUIET ON THE HOMESTEAD"
+	}
+	idx := int(g.now/3600) % len(g.content.Headlines)
+	return strings.ToUpper(sanitizeText(g.content.Headlines[idx].Text))
 }
 
 func (g *Game) viewNav() string {
 	labels := []struct {
 		s    screen
 		text string
+		lock bool
 	}{
-		{scrFarm, "1 Farm"}, {scrMarket, "2 Market"}, {scrLand, "3 Land"},
-		{scrRebirth, "4 Rebirth"}, {scrStats, "5 Stats"}, {scrHelp, "? Help"},
+		{scrFarm, "1 Farm", false}, {scrMarket, "2 Market", false}, {scrLand, "3 Land", false},
+		{scrRebirth, "4 Rebirth", false}, {scrProgress, "5 Progress", g.snap.State.Rebirths < 1},
+		{scrStats, "6 Stats", false}, {scrHelp, "? Help", false},
 	}
 	parts := make([]string, 0, len(labels))
 	for _, l := range labels {
+		text := l.text
+		if l.lock {
+			text += " 🔒"
+		}
 		if l.s == g.scr && g.overlay == ovNone {
-			parts = append(parts, styleNavOn.Render(l.text))
+			parts = append(parts, styleNavOn.Render(text))
+		} else if l.lock {
+			parts = append(parts, styleNavLock.Render(text))
 		} else {
-			parts = append(parts, styleNavOff.Render(l.text))
+			parts = append(parts, styleNavOff.Render(text))
 		}
 	}
 	return strings.Join(parts, "")
@@ -124,27 +196,32 @@ func (g *Game) viewFooter() string {
 	switch {
 	case g.overlay == ovPicker:
 		hints = "↑/↓ choose · enter plant · esc cancel"
+	case g.overlay == ovUpgrade:
+		hints = "↑/↓ plot · h auto-harvest · s auto-sow · esc cancel"
+	case g.overlay == ovName:
+		hints = "type name · enter save · esc cancel"
 	case g.overlay == ovRebirthConfirm:
 		hints = "y rebirth · n keep farming"
 	case g.overlay == ovOnboarding || g.overlay == ovAway:
 		hints = "press any key to continue"
 	case g.scr == scrFarm:
-		hints = "←↑↓→ select · enter plant/harvest · a harvest all · q quit"
+		hints = "←↑↓→ · enter plant/harvest · a harvest all · u upgrades · g gift · q quit"
 	case g.scr == scrMarket:
 		hints = "↑/↓ select · enter buy · q quit"
 	case g.scr == scrLand:
 		hints = "enter buy plot · q quit"
 	case g.scr == scrRebirth:
-		hints = "↑/↓ select upgrade · enter buy · R rebirth · q quit"
+		hints = "R rebirth · q quit"
+	case g.scr == scrProgress:
+		hints = "↑/↓ select · enter buy · q quit"
 	case g.scr == scrStats:
-		hints = "t toggle lucky finds · q quit"
+		hints = "n name farm · t toggle lucky finds · q quit"
 	default:
-		hints = "1-5 screens · q quit"
+		hints = "1-6 screens · g gift · q quit"
 	}
 	return styleHint.Render(truncate(hints, g.contentWidth()-1))
 }
 
-// farmColumns picks how many plot cards fit per row.
 func (g *Game) farmColumns() int {
 	if g.compactFarm() {
 		return 1
@@ -159,7 +236,6 @@ func (g *Game) farmColumns() int {
 	return cols
 }
 
-// compactFarm switches to one-line plot rows on small canvases.
 func (g *Game) compactFarm() bool {
 	cw, chh := g.contentWidth(), g.contentHeight()
 	rowsNeeded := (len(g.snap.State.Plots) + cw/22 - 1) / max(cw/22, 1)
@@ -191,15 +267,37 @@ func (g *Game) viewFarm() string {
 	return strings.Join(rows, "\n")
 }
 
+func (g *Game) plotBadges(plot sim.Plot) string {
+	var b strings.Builder
+	if plot.AutoHarvest {
+		b.WriteString("⚙")
+	}
+	if plot.AutoSow {
+		b.WriteString("♻")
+	}
+	if plot.Critter != "" && plot.Crop == "" {
+		b.WriteString("🐾")
+	}
+	return b.String()
+}
+
 func (g *Game) plotCard(i int) string {
 	st := g.snap.State
 	plot := st.Plots[i]
 	title := "Plot " + itoa(i+1)
+	if badges := g.plotBadges(plot); badges != "" {
+		title += " " + badges
+	}
 	var line1, line2 string
 	switch {
 	case plot.Crop == "":
-		line1 = styleEmpty.Render("· empty ·")
-		line2 = styleEmpty.Render("enter to plant")
+		if plot.Critter != "" {
+			line1 = styleEmpty.Render("· " + sanitizeText(plot.Critter) + " ·")
+			line2 = styleHint.Render("x to shoo")
+		} else {
+			line1 = styleEmpty.Render("· empty ·")
+			line2 = styleEmpty.Render("enter to plant")
+		}
 	case st.PlotReady(g.content, i, g.now):
 		line1 = g.cropName(plot.Crop)
 		line2 = styleReady.Render("✓ ready!")
@@ -238,10 +336,15 @@ func (g *Game) viewFarmCompact() string {
 		if i == g.cursor {
 			marker = styleSelected.Render("▸ ")
 		}
+		badges := g.plotBadges(plot)
 		var status string
 		switch {
 		case plot.Crop == "":
-			status = styleEmpty.Render("empty")
+			if plot.Critter != "" {
+				status = styleEmpty.Render(sanitizeText(plot.Critter))
+			} else {
+				status = styleEmpty.Render("empty")
+			}
 		case st.PlotReady(g.content, i, g.now):
 			status = g.cropName(plot.Crop) + " " + styleReady.Render("✓ ready!")
 		default:
@@ -254,7 +357,7 @@ func (g *Game) viewFarmCompact() string {
 				status = styleLocked.Render("(unknown crop)")
 			}
 		}
-		b.WriteString(marker + itoa(i+1) + ". " + status + "\n")
+		b.WriteString(marker + itoa(i+1) + badges + ". " + status + "\n")
 	}
 	if start+maxRows < len(st.Plots) {
 		b.WriteString(styleHint.Render("  …" + itoa(len(st.Plots)-start-maxRows) + " more below"))
@@ -271,29 +374,69 @@ func (g *Game) cropName(id string) string {
 
 func (g *Game) viewPicker() string {
 	st := g.snap.State
+	crops := g.visibleCrops()
 	var b strings.Builder
 	b.WriteString(styleSection.Render("Plant on plot "+itoa(g.cursor+1)) + "\n\n")
-	for i, crop := range g.content.Crops {
+	for i, crop := range crops {
 		marker := "  "
 		if i == g.pickerIdx {
 			marker = styleSelected.Render("▸ ")
 		}
 		name := sanitizeText(crop.Name)
-		grow := duration(st.GrowSeconds(g.content, &g.content.Crops[i]))
-		info := name + "  " + money(crop.SeedCost) + "c · " + grow + " · sells " + money(crop.SellValue) + "c"
+		grow := duration(st.GrowSeconds(g.content, &crop))
+		cost := st.SeedCost(g.content, &crop)
+		info := name + "  " + money(cost) + "c · " + grow + " · sells " + money(crop.SellValue) + "c"
 		if crop.Archetype == "risky" {
-			info += " (risky!)"
+			salvage := st.SalvageValue(g.content, &crop)
+			info += " · fails to " + money(salvage) + "c (" + itoa(int(crop.FailChancePct)) + "%)"
 		}
 		switch {
 		case !st.Unlocked(crop.Unlock):
 			b.WriteString(marker + styleLocked.Render(info+"  🔒 "+g.gateText(crop.Unlock)) + "\n")
-		case st.Coins < crop.SeedCost:
+		case st.MercyPlantEligible(g.content, crop.ID):
+			b.WriteString(marker + styleReady.Render(info+"  FREE — the land provides") + "\n")
+		case st.Coins < cost:
 			b.WriteString(marker + styleLocked.Render(info+"  (can't afford)") + "\n")
 		default:
 			b.WriteString(marker + styleValue.Render(info) + "\n")
 		}
 	}
 	return styleBox.Render(strings.TrimRight(b.String(), "\n"))
+}
+
+func (g *Game) viewUpgrade() string {
+	st := g.snap.State
+	var b strings.Builder
+	b.WriteString(styleSection.Render("Plot automation") + "\n\n")
+	hCost := st.PlotAutoHarvestCost(g.content)
+	sCost := g.content.PlotAutomation.AutoSowCost
+	for i, plot := range st.Plots {
+		marker := "  "
+		if i == g.upgradeIdx {
+			marker = styleSelected.Render("▸ ")
+		}
+		line := "Plot " + itoa(i+1)
+		if plot.AutoHarvest {
+			line += " ⚙"
+		} else {
+			line += " — harvest " + money(hCost) + "c (h)"
+		}
+		if plot.AutoSow {
+			line += " ♻"
+		} else if plot.AutoHarvest {
+			line += " — sow " + money(sCost) + "c (s)"
+		}
+		b.WriteString(marker + styleValue.Render(line) + "\n")
+	}
+	b.WriteString("\n" + styleHint.Render("Auto-sow needs harvester + "+money(g.content.PlotAutomation.AutoSowMinEarnings)+" lifetime coins."))
+	return styleBox.Render(strings.TrimRight(b.String(), "\n"))
+}
+
+func (g *Game) viewName() string {
+	text := styleSection.Render("Name your farm") + "\n\n" +
+		styleValue.Render("> "+sanitizeText(g.nameInput)+"_") + "\n\n" +
+		styleHint.Render("Enter to save · Esc to cancel")
+	return styleBox.Render(text)
 }
 
 func (g *Game) gateText(u content.Unlock) string {
@@ -315,25 +458,60 @@ func (g *Game) viewMarket() string {
 	st := g.snap.State
 	var b strings.Builder
 
-	b.WriteString(styleSection.Render("Seeds (plant from the farm screen)") + "\n")
-	for i := range g.content.Crops {
-		crop := &g.content.Crops[i]
-		line := "  " + sanitizeText(crop.Name) + " — " + crop.Archetype + " · " +
-			money(crop.SeedCost) + "c · " + duration(st.GrowSeconds(g.content, crop)) +
-			" · sells " + money(crop.SellValue) + "c"
-		if !st.Unlocked(crop.Unlock) {
-			b.WriteString(styleLocked.Render(line+"  🔒 "+g.gateText(crop.Unlock)) + "\n")
-		} else {
-			b.WriteString(styleValue.Render(line) + "\n")
-		}
-	}
-
-	b.WriteString("\n" + styleSection.Render("Tools & Zones") + "\n")
+	b.WriteString(styleSection.Render("Multipliers (this run)") + "\n")
 	items := g.marketItems()
 	if g.marketIdx >= len(items) && len(items) > 0 {
 		g.marketIdx = len(items) - 1
 	}
+	idx := 0
 	for i, it := range items {
+		if it.kind != "multiplier" {
+			continue
+		}
+		marker := "  "
+		if i == g.marketIdx {
+			marker = styleSelected.Render("▸ ")
+		}
+		line := sanitizeText(it.name) + " Lv" + itoa(it.level) + "/" + itoa(it.maxLvl) + " — " + sanitizeText(it.desc)
+		switch {
+		case it.level >= it.maxLvl:
+			b.WriteString(marker + styleReady.Render("✓ "+line+"  maxed") + "\n")
+		case st.Coins < it.cost:
+			b.WriteString(marker + styleLocked.Render(line+"  "+money(it.cost)+"c") + "\n")
+		default:
+			b.WriteString(marker + styleValue.Render(line+"  "+money(it.cost)+"c") + "\n")
+		}
+		idx++
+		_ = idx
+	}
+
+	b.WriteString("\n" + styleSection.Render("Hardier Strains") + "\n")
+	for i, it := range items {
+		if it.kind != "strain" {
+			continue
+		}
+		marker := "  "
+		if i == g.marketIdx {
+			marker = styleSelected.Render("▸ ")
+		}
+		line := sanitizeText(it.name) + " Lv" + itoa(it.level) + "/" + itoa(it.maxLvl) + " — " + sanitizeText(it.desc)
+		switch {
+		case it.level >= it.maxLvl:
+			b.WriteString(marker + styleReady.Render("✓ "+line+"  maxed") + "\n")
+		case it.locked:
+			b.WriteString(marker + styleLocked.Render(line+"  🔒") + "\n")
+		case st.Coins < it.cost:
+			b.WriteString(marker + styleLocked.Render(line+"  "+money(it.cost)+"c") + "\n")
+		default:
+			b.WriteString(marker + styleValue.Render(line+"  "+money(it.cost)+"c") + "\n")
+		}
+	}
+
+	b.WriteString("\n" + styleSection.Render("Zones") + "\n")
+	for i, it := range items {
+		if it.kind != "zone" {
+			continue
+		}
 		marker := "  "
 		if i == g.marketIdx {
 			marker = styleSelected.Render("▸ ")
@@ -365,12 +543,25 @@ func (g *Game) viewLand() string {
 		b.WriteString("  Next plot: " + styleValue.Render(money(cost)+" coins") + "\n")
 		if st.Coins >= cost {
 			b.WriteString("\n  " + styleReady.Render("Press enter to till new ground.") + "\n")
-		} else {
-			b.WriteString("\n  " + styleHint.Render("Keep harvesting — "+money(cost-st.Coins)+" more coins to afford it.") + "\n")
 		}
 	}
-	b.WriteString("\n  " + styleHint.Render("Each plot costs more than the last; zones on the market add bigger jumps."))
-	return b.String()
+
+	b.WriteString("\n" + styleSection.Render("Seed catalog (plant from Farm)") + "\n")
+	for _, crop := range g.visibleCrops() {
+		grow := duration(st.GrowSeconds(g.content, &crop))
+		line := "  " + sanitizeText(crop.Name) + " — " + crop.Archetype + " · " +
+			money(st.SeedCost(g.content, &crop)) + "c · " + grow +
+			" · sells " + money(crop.SellValue) + "c"
+		if crop.Archetype == "risky" {
+			line += " · fails to " + money(st.SalvageValue(g.content, &crop)) + "c"
+		}
+		if !st.Unlocked(crop.Unlock) {
+			b.WriteString(styleLocked.Render(line+"  🔒 "+g.gateText(crop.Unlock)) + "\n")
+		} else {
+			b.WriteString(styleValue.Render(line) + "\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (g *Game) viewRebirth() string {
@@ -380,17 +571,44 @@ func (g *Game) viewRebirth() string {
 	b.WriteString(styleSection.Render("Rebirth") + "\n\n")
 	b.WriteString("  This run has earned " + styleValue.Render(money(st.RunEarnings)+" coins") + ".\n")
 	if st.CanRebirth(g.content) {
-		b.WriteString("  Rebirthing now grants " + styleReady.Render("✦ "+money(gain)+" prestige") + ".\n")
+		b.WriteString("  Rebirthing now grants " + styleReady.Render("✦ "+money(gain)+" "+g.starseedLabel()) + ".\n")
 	} else {
 		b.WriteString("  " + styleHint.Render("Earn "+money(g.content.Prestige.MinEarnings)+" coins in one run to unlock rebirth.") + "\n")
 	}
-	b.WriteString("\n" + styleSection.Render("  Kept: ") + styleValue.Render("prestige, upgrades, achievements, crop unlocks") + "\n")
-	b.WriteString(styleSection.Render("  Lost: ") + styleValue.Render("coins, plots, planted crops, tools, zones") + "\n")
+	b.WriteString("\n" + styleSection.Render("  Kept: ") + styleValue.Render(g.starseedLabel()+", upgrades, achievements, crop unlocks") + "\n")
+	b.WriteString(styleSection.Render("  Lost: ") + styleValue.Render("coins, plots, crops, multipliers, zones, plot automation") + "\n")
 
-	b.WriteString("\n" + styleSection.Render("Permanent upgrades (✦ "+money(st.PrestigeCurrency)+" available)") + "\n")
+	b.WriteString("\n" + styleSection.Render("Next rebirth unlocks") + "\n")
+	nextTier := st.Rebirths + 1
+	found := false
+	for _, crop := range g.content.Crops {
+		if crop.Unlock.Kind == "prestige" && crop.Unlock.Value == nextTier {
+			b.WriteString("  " + styleValue.Render("🌱 "+sanitizeText(crop.Name)+" ("+crop.Archetype+")") + "\n")
+			found = true
+		}
+	}
+	if !found {
+		b.WriteString("  " + styleHint.Render("More secrets await deeper cycles…") + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (g *Game) viewProgress() string {
+	st := g.snap.State
+	if st.Rebirths < 1 {
+		return styleSection.Render("Progress") + "\n\n" +
+			styleLocked.Render("  🔒 Rebirth once to discover what lies beyond.\n\n") +
+			styleHint.Render("  The cosmos keeps its deeper rewards for those who begin anew.")
+	}
+	var b strings.Builder
+	b.WriteString(styleSection.Render("Progress — "+g.starseedLabel()) + "\n\n")
+	b.WriteString("  Balance: " + styleValue.Render("✦ "+money(st.PrestigeCurrency)) + "\n")
+	b.WriteString("  Rebirths: " + styleValue.Render(money(st.Rebirths)) + "\n\n")
+
+	b.WriteString(styleSection.Render("Lifetime upgrades") + "\n")
 	for i, u := range g.content.Upgrades {
 		marker := "  "
-		if i == g.upgradeIdx {
+		if i == g.progressIdx {
 			marker = styleSelected.Render("▸ ")
 		}
 		level := st.UpgradeLevel(u.ID)
@@ -412,9 +630,9 @@ func (g *Game) viewRebirthConfirm() string {
 	st := g.snap.State
 	gain := st.PrestigeGain(g.content)
 	text := styleSection.Render("Rebirth?") + "\n\n" +
-		"You will gain  " + styleReady.Render("✦ "+money(gain)+" prestige") + "\n" +
-		"You will lose  " + styleValue.Render(money(st.Coins)+" coins, "+itoa(len(st.Plots))+" plots, and this run's tools") + "\n\n" +
-		"Your upgrades, achievements, and crop unlocks stay forever.\n\n" +
+		"You will gain  " + styleReady.Render("✦ "+money(gain)+" "+g.starseedLabel()) + "\n" +
+		"You will lose  " + styleValue.Render(money(st.Coins)+" coins, "+itoa(len(st.Plots))+" plots, and this run's progress") + "\n\n" +
+		"Your " + g.starseedLabel() + ", upgrades, and achievements stay forever.\n\n" +
 		styleReady.Render("y") + " — yes, begin anew    " + styleHint.Render("n — keep farming")
 	return styleBox.Render(text)
 }
@@ -423,13 +641,18 @@ func (g *Game) viewStats() string {
 	st := g.snap.State
 	var b strings.Builder
 	b.WriteString(styleSection.Render("This farm") + "\n")
+	if st.FarmName != "" {
+		b.WriteString("  Farm name: " + styleValue.Render(sanitizeText(st.FarmName)) + styleHint.Render("  (n to rename)") + "\n")
+	} else {
+		b.WriteString("  Farm name: " + styleHint.Render("(unnamed — press n)") + "\n")
+	}
 	b.WriteString("  Save slot: " + styleValue.Render(sanitizeText(g.id.Slot)) + "\n")
 	b.WriteString("  Key: " + styleHint.Render(shortFingerprint(g.id.Fingerprint)) + "\n")
 	b.WriteString("  Lucky finds: " + styleValue.Render(onOff(st.FlavorEnabled)) + styleHint.Render("  (t to toggle)") + "\n")
 	b.WriteString("\n" + styleSection.Render("Lifetime") + "\n")
 	b.WriteString("  Earnings: " + styleValue.Render(money(st.LifetimeEarnings)+" coins") + "\n")
 	b.WriteString("  Harvests: " + styleValue.Render(money(st.LifetimeHarvests)) + "\n")
-	b.WriteString("  Rebirths: " + styleValue.Render(money(st.Rebirths)) + "  ·  Prestige: " + styleValue.Render("✦ "+money(st.PrestigeCurrency)) + "\n")
+	b.WriteString("  Rebirths: " + styleValue.Render(money(st.Rebirths)) + "  ·  " + g.starseedLabel() + ": " + styleValue.Render("✦ "+money(st.PrestigeCurrency)) + "\n")
 
 	b.WriteString("\n" + styleSection.Render("Achievements") + "\n")
 	for _, a := range g.content.Achievements {
@@ -443,21 +666,23 @@ func (g *Game) viewStats() string {
 }
 
 func (g *Game) viewHelp() string {
+	ss := g.starseedLabel()
 	return styleSection.Render("How it works") + "\n\n" +
 		styleValue.Render("  Plant crops, go live your life, come back and harvest. Crops keep\n"+
-			"  growing while you're away — there's nothing to lose and no rush.\n"+
-			"  Earn coins, buy plots and tools, and one day rebirth for permanent\n"+
-			"  bonuses that make every later run faster.") + "\n\n" +
+			"  growing while you're away. Earn coins, buy plots and upgrades, and\n"+
+			"  rebirth for "+ss+" — permanent bonuses that make every later run faster.") + "\n\n" +
 		styleSection.Render("Keys") + "\n" +
-		styleValue.Render("  1-5 / f m l r s   switch screens          ? help\n"+
+		styleValue.Render("  1-6 / f m l r p s   switch screens          ? help\n"+
 			"  ←↑↓→ or hjkl      move around the farm\n"+
 			"  enter / space     plant (empty) or harvest (ready)\n"+
 			"  a                 harvest everything that's ready\n"+
-			"  t                 toggle lucky finds (stats screen)\n"+
+			"  u                 plot automation upgrades\n"+
+			"  g                 redeem a gift parcel\n"+
+			"  x                 shoo a critter off a plot\n"+
+			"  n                 name your farm (stats screen)\n"+
 			"  R                 rebirth (rebirth screen, with confirmation)\n"+
 			"  q / ctrl+c        leave (progress is saved automatically)") + "\n\n" +
-		styleHint.Render("  Your SSH key is your identity; the username picks the save slot.\n"+
-			"  ssh other@host opens a second farm under the same key.")
+		styleHint.Render("  Your SSH key is your identity; the username picks the save slot.")
 }
 
 func (g *Game) viewOnboarding() string {
@@ -475,7 +700,10 @@ func (g *Game) viewAway() string {
 	var b strings.Builder
 	b.WriteString(styleTitle.Render("Welcome back! 🌾") + "\n\n")
 	b.WriteString(styleValue.Render("You were away "+duration(ev.Elapsed)+".") + "\n")
-	wrote := false
+	for _, v := range ev.AwayVignettes {
+		b.WriteString(styleHint.Render("  "+sanitizeText(v)) + "\n")
+	}
+	wrote := len(ev.AwayVignettes) > 0
 	for id, n := range ev.Matured {
 		name := id
 		if crop := g.content.Crop(id); crop != nil {
@@ -485,11 +713,27 @@ func (g *Game) viewAway() string {
 		wrote = true
 	}
 	if total := totalCount(ev.AutoHarvested); total > 0 {
-		b.WriteString(styleReady.Render("  🤖 The auto-harvester gathered "+itoa(total)+" crops (+"+money(ev.AutoCoins)+" coins)") + "\n")
+		b.WriteString(styleReady.Render("  ⚙ Auto-plots gathered "+itoa(total)+" crops (+"+money(ev.AutoCoins)+" coins)") + "\n")
+		wrote = true
+	}
+	if ev.GoldenHarvests > 0 {
+		b.WriteString(styleReady.Render("  ✨ "+itoa(ev.GoldenHarvests)+" golden harvest(s)!") + "\n")
+		wrote = true
+	}
+	for id, n := range ev.FailedHarvests {
+		name := id
+		if crop := g.content.Crop(id); crop != nil {
+			name = crop.Name
+		}
+		b.WriteString(styleReady.Render("  💥 "+itoa(n)+"× "+sanitizeText(name)+" failed in the field") + "\n")
 		wrote = true
 	}
 	if ev.Discoveries > 0 {
 		b.WriteString(styleReady.Render("  ✨ "+itoa(ev.Discoveries)+" lucky finds (+"+money(ev.DiscoveryCoins)+" coins)") + "\n")
+		wrote = true
+	}
+	if ev.GiftArrived {
+		b.WriteString(styleReady.Render("  📦 A parcel waits at the gate — press g") + "\n")
 		wrote = true
 	}
 	if !wrote {

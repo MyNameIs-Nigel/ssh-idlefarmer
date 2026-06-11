@@ -6,8 +6,81 @@ import (
 	"github.com/mynameis-nigel/ssh-idlefarmer/internal/content"
 )
 
-// GrowSeconds returns the crop's effective grow time for this save, after
-// permanent grow-speed upgrades. Integer math; never below 1 second.
+// VisibleCrops returns crops that should appear in pickers and catalogs.
+// Prestige-locked crops with unlock value V are hidden until Rebirths >= V-1.
+func VisibleCrops(s *State, c *content.Content) []content.Crop {
+	var out []content.Crop
+	for _, crop := range c.Crops {
+		if crop.Unlock.Kind == "prestige" && crop.Unlock.Value > 1 {
+			if s.Rebirths < crop.Unlock.Value-1 {
+				continue
+			}
+		}
+		out = append(out, crop)
+	}
+	return out
+}
+
+// CheapestUnlockedCrop returns the lowest seed-cost crop the player can plant.
+func CheapestUnlockedCrop(s *State, c *content.Content) *content.Crop {
+	var best *content.Crop
+	for i := range c.Crops {
+		crop := &c.Crops[i]
+		if !s.Unlocked(crop.Unlock) {
+			continue
+		}
+		if best == nil || crop.SeedCost < best.SeedCost {
+			best = crop
+		}
+	}
+	return best
+}
+
+// MercyPlantEligible reports whether planting cropID is free under mercy rules.
+func (s *State) MercyPlantEligible(c *content.Content, cropID string) bool {
+	if !s.allPlotsEmpty() {
+		return false
+	}
+	cheapest := CheapestUnlockedCrop(s, c)
+	if cheapest == nil || cropID != cheapest.ID {
+		return false
+	}
+	return s.Coins < s.SeedCost(c, cheapest)
+}
+
+func (s *State) allPlotsEmpty() bool {
+	for _, p := range s.Plots {
+		if p.Crop != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// SeedCost returns the effective seed cost after event discounts.
+func (s *State) SeedCost(c *content.Content, crop *content.Crop) int64 {
+	cost := crop.SeedCost
+	if ev := s.activeEvent(c); ev != nil && ev.Effect == "seed_discount_pct" {
+		discount := ev.EffectValue
+		if discount >= 100 {
+			discount = 99
+		}
+		cost = cost * (100 - discount) / 100
+	}
+	if cost < 0 {
+		cost = 0
+	}
+	return cost
+}
+
+// SalvageValue returns the coins from a failed risky harvest at current strain level.
+func (s *State) SalvageValue(c *content.Content, crop *content.Crop) int64 {
+	num := SalvageNumerator(s.SeedUpgradeLevel(crop.ID))
+	base := crop.SellValue * num / 8
+	return s.sellMultiplied(c, base, crop.ID)
+}
+
+// GrowSeconds returns the crop's effective grow time for this save.
 func (s *State) GrowSeconds(c *content.Content, crop *content.Crop) int64 {
 	reduction := int64(0)
 	for _, u := range c.Upgrades {
@@ -15,8 +88,16 @@ func (s *State) GrowSeconds(c *content.Content, crop *content.Crop) int64 {
 			reduction += u.EffectValue * int64(s.UpgradeLevel(u.ID))
 		}
 	}
+	for _, m := range c.Multipliers {
+		if m.Effect == "grow_speed_pct" {
+			reduction += m.EffectValue * int64(s.MultiplierLevel(m.ID))
+		}
+	}
+	if ev := s.activeEvent(c); ev != nil && ev.Effect == "grow_speed_pct" {
+		reduction += ev.EffectValue
+	}
 	if reduction >= 100 {
-		reduction = 99 // content validation prevents this, but stay safe
+		reduction = 99
 	}
 	g := crop.GrowSeconds * (100 - reduction) / 100
 	if g < 1 {
@@ -25,13 +106,24 @@ func (s *State) GrowSeconds(c *content.Content, crop *content.Crop) int64 {
 	return g
 }
 
-// sellMultiplied applies permanent sell-bonus upgrades to a base payout.
-func (s *State) sellMultiplied(c *content.Content, base int64) int64 {
+// sellMultiplied applies permanent and run-scoped sell bonuses to a base payout.
+func (s *State) sellMultiplied(c *content.Content, base int64, cropID string) int64 {
 	bonus := int64(0)
 	for _, u := range c.Upgrades {
 		if u.Effect == "sell_bonus_pct" {
 			bonus += u.EffectValue * int64(s.UpgradeLevel(u.ID))
 		}
+	}
+	for _, m := range c.Multipliers {
+		if m.Effect == "sell_bonus_pct" {
+			bonus += m.EffectValue * int64(s.MultiplierLevel(m.ID))
+		}
+	}
+	if ev := s.activeEvent(c); ev != nil && ev.Effect == "sell_bonus_pct" {
+		bonus += ev.EffectValue
+	}
+	if s.isFullMoon(c, cropID) {
+		bonus += c.Moon.FullMoonSellBonusPct
 	}
 	if bonus == 0 {
 		return base
@@ -40,6 +132,64 @@ func (s *State) sellMultiplied(c *content.Content, base int64) int64 {
 		return math.MaxInt64
 	}
 	return base * (100 + bonus) / 100
+}
+
+func (s *State) activeEvent(c *content.Content) *content.Event {
+	if s.EventID == "" {
+		return nil
+	}
+	return c.EventByID(s.EventID)
+}
+
+// EventActive reports whether an event is running at now.
+func (s *State) EventActive(now int64) bool {
+	return s.EventID != "" && now < s.EventEndsAt
+}
+
+// isFullMoon reports whether the moon is full and cropID gets the bonus.
+func (s *State) isFullMoon(c *content.Content, cropID string) bool {
+	if cropID != c.Moon.MoonberryCropID || c.Moon.CycleDays < 1 {
+		return false
+	}
+	phase := s.MoonPhase()
+	// Full moon at phase 14 of a 28-day cycle (0-indexed day in cycle).
+	return phase == c.Moon.CycleDays/2
+}
+
+// MoonPhase returns the day index (0..cycle-1) in the current moon cycle.
+func (s *State) MoonPhase() int64 {
+	cycle := int64(28)
+	if s.MoonEpoch == 0 {
+		return 0
+	}
+	day := s.UpdatedAt / 86400
+	if cycle < 1 {
+		return 0
+	}
+	return (day - s.MoonEpoch) % cycle
+}
+
+// MoonPhaseName returns a cosmetic label for the current moon phase.
+func (s *State) MoonPhaseName(c *content.Content) string {
+	cycle := c.Moon.CycleDays
+	if cycle < 1 {
+		cycle = 28
+	}
+	phase := s.MoonPhase()
+	switch {
+	case phase == cycle/2:
+		return "Full Moon"
+	case phase == 0:
+		return "New Moon"
+	case phase < cycle/4:
+		return "Waxing Crescent"
+	case phase < cycle/2:
+		return "Waxing Gibbous"
+	case phase < 3*cycle/4:
+		return "Waning Gibbous"
+	default:
+		return "Waning Crescent"
+	}
 }
 
 // startCoins returns the wallet a new run begins with, including the
@@ -55,8 +205,7 @@ func startCoins(c *content.Content, upgrades map[string]int) int64 {
 }
 
 // NextPlotCost returns the price of the next plot, or -1 when the farm is at
-// the purchasable cap. Geometric growth with integer math, discounted by
-// plot-discount upgrades.
+// the purchasable cap.
 func (s *State) NextPlotCost(c *content.Content) int64 {
 	if c.Start.Plots+s.PurchasedPlots >= c.Land.MaxPlots {
 		return -1
@@ -85,7 +234,29 @@ func (s *State) NextPlotCost(c *content.Content) int64 {
 	return cost
 }
 
-// UpgradeCost returns the prestige price of the next level of an upgrade, or
+// PlotAutoHarvestCost returns the cost to add auto-harvest to a plot.
+func (s *State) PlotAutoHarvestCost(c *content.Content) int64 {
+	n := int64(0)
+	for _, p := range s.Plots {
+		if p.AutoHarvest {
+			n++
+		}
+	}
+	cost := c.PlotAutomation.AutoHarvestBaseCost
+	for i := int64(0); i < n; i++ {
+		if cost > math.MaxInt64/c.PlotAutomation.AutoHarvestGrowthPct {
+			cost = math.MaxInt64 / 100
+			break
+		}
+		cost = cost * c.PlotAutomation.AutoHarvestGrowthPct / 100
+	}
+	if cost < 1 {
+		cost = 1
+	}
+	return cost
+}
+
+// UpgradeCost returns the Starseed price of the next level of an upgrade, or
 // -1 when it is already at max level.
 func (s *State) UpgradeCost(u *content.Upgrade) int64 {
 	level := s.UpgradeLevel(u.ID)
@@ -102,8 +273,39 @@ func (s *State) UpgradeCost(u *content.Upgrade) int64 {
 	return cost
 }
 
-// PrestigeGain returns the prestige currency a rebirth would award right now:
-// isqrt(run earnings / divisor).
+// MultiplierCost returns the coin price of the next level of a multiplier.
+func (s *State) MultiplierCost(m *content.Multiplier) int64 {
+	level := s.MultiplierLevel(m.ID)
+	if level >= m.MaxLevel {
+		return -1
+	}
+	cost := m.Cost
+	for i := 0; i < level; i++ {
+		if cost > math.MaxInt64/m.CostGrowthPct {
+			return math.MaxInt64 / 100
+		}
+		cost = cost * m.CostGrowthPct / 100
+	}
+	return cost
+}
+
+// SeedUpgradeCost returns the coin price of the next Hardier Strain level.
+func (s *State) SeedUpgradeCost(su *content.SeedUpgrade) int64 {
+	level := s.SeedUpgradeLevel(su.CropID)
+	if level >= su.MaxLevel {
+		return -1
+	}
+	cost := su.Cost
+	for i := 0; i < level; i++ {
+		if cost > math.MaxInt64/su.CostGrowthPct {
+			return math.MaxInt64 / 100
+		}
+		cost = cost * su.CostGrowthPct / 100
+	}
+	return cost
+}
+
+// PrestigeGain returns the Starseeds a rebirth would award: isqrt(run earnings / divisor).
 func (s *State) PrestigeGain(c *content.Content) int64 {
 	return isqrt(s.RunEarnings / c.Prestige.Divisor)
 }
@@ -113,9 +315,7 @@ func (s *State) CanRebirth(c *content.Content) bool {
 	return s.RunEarnings >= c.Prestige.MinEarnings && s.PrestigeGain(c) >= 1
 }
 
-// isqrt is the integer square root (floor) for non-negative n. The
-// correction loops compare via division so they cannot overflow even for n
-// near MaxInt64 (saturated lifetime earnings).
+// isqrt is the integer square root (floor) for non-negative n.
 func isqrt(n int64) int64 {
 	if n <= 0 {
 		return 0
@@ -131,9 +331,6 @@ func isqrt(n int64) int64 {
 }
 
 // Unlocked reports whether an unlock gate is satisfied for this save.
-// "earnings" and "prestige" gates are permanent (lifetime values), so crops a
-// player has unlocked stay unlocked across rebirths; "zone" gates depend on
-// the run's owned zones.
 func (s *State) Unlocked(u content.Unlock) bool {
 	switch u.Kind {
 	case "", "start":
@@ -179,4 +376,15 @@ func (s *State) PlotProgressPct(c *content.Content, i int, now int64) int {
 		return 100
 	}
 	return int(elapsed * 100 / grow)
+}
+
+// upgradeEffectSum sums effect values from permanent upgrades with a given effect.
+func (s *State) upgradeEffectSum(c *content.Content, effect string) int64 {
+	var sum int64
+	for _, u := range c.Upgrades {
+		if u.Effect == effect {
+			sum += u.EffectValue * int64(s.UpgradeLevel(u.ID))
+		}
+	}
+	return sum
 }
