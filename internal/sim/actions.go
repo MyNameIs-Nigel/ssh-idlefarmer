@@ -53,7 +53,6 @@ func Plant(s *State, c *content.Content, i int, cropID string, now int64) error 
 		s.Coins -= cost
 	}
 	s.Plots[i] = Plot{Crop: cropID, PlantedAt: now, AutoHarvest: s.Plots[i].AutoHarvest, AutoSow: s.Plots[i].AutoSow}
-	s.Plots[i].Critter = ""
 	return nil
 }
 
@@ -231,8 +230,8 @@ func BuyUpgrade(s *State, c *content.Content, id string) error {
 
 // GiftResult reports what a redeemed parcel contained.
 type GiftResult struct {
-	Coins      int64
-	Starseeds  int64
+	Coins     int64
+	Starseeds int64
 }
 
 // RedeemGift opens the pending parcel.
@@ -271,6 +270,9 @@ func giftCoinReward(s *State, c *content.Content) int64 {
 	reward := base + jitter
 	if reward < c.Gifts.CoinRewardFloor {
 		reward = c.Gifts.CoinRewardFloor
+	}
+	if reward > c.Gifts.CoinRewardCeiling {
+		reward = c.Gifts.CoinRewardCeiling
 	}
 	return reward
 }
@@ -318,6 +320,7 @@ func Rebirth(s *State, c *content.Content, now int64) (int64, error) {
 	s.Tools = map[string]bool{}
 	s.Zones = map[string]bool{}
 	s.Multipliers = map[string]int{}
+	s.SeedUpgrades = map[string]int{}
 	s.RunEarnings = 0
 	s.EventID = ""
 	s.EventEndsAt = 0

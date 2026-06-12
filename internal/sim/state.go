@@ -216,6 +216,10 @@ func (s *State) nextRand() uint64 {
 // roll100 returns a uniform integer in [0, 100).
 func (s *State) roll100() int64 { return int64(s.nextRand() % 100) }
 
+// rollBp returns a uniform integer in [0, 10000), for chances that need
+// sub-percent resolution (per-second rolls against multi-minute intervals).
+func (s *State) rollBp() int64 { return int64(s.nextRand() % 10000) }
+
 // rollRange returns a uniform integer in [lo, hi].
 func (s *State) rollRange(lo, hi int64) int64 {
 	if hi <= lo {

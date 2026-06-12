@@ -13,20 +13,20 @@ const onlineTickThreshold = 2
 
 // Events describes what happened during an Advance.
 type Events struct {
-	Elapsed         int64
-	Matured         map[string]int
-	AutoHarvested   map[string]int
-	AutoCoins       int64
-	Discoveries     int
-	DiscoveryCoins  int64
-	Achievements    []string
-	FailedHarvests  map[string]int
-	GoldenHarvests  int
-	GiftArrived     bool
-	EventStarted    string
-	EventEnded      string
-	CritterVisits   []string
-	AwayVignettes   []string
+	Elapsed        int64
+	Matured        map[string]int
+	AutoHarvested  map[string]int
+	AutoCoins      int64
+	Discoveries    int
+	DiscoveryCoins int64
+	Achievements   []string
+	FailedHarvests map[string]int
+	GoldenHarvests int
+	GiftArrived    bool
+	EventStarted   string
+	EventEnded     string
+	CritterVisits  []string
+	AwayVignettes  []string
 }
 
 // Empty reports whether nothing noteworthy happened.
@@ -63,7 +63,7 @@ func Advance(s *State, c *content.Content, to int64) Events {
 
 	// Roll gifts and events before plot simulation.
 	if online {
-		s.rollOnlineEvent(c, to, &ev)
+		s.rollOnlineEvent(c, elapsed, to, &ev)
 	}
 	s.rollGiftArrival(c, elapsed, online, to, &ev)
 
@@ -91,30 +91,36 @@ func Advance(s *State, c *content.Content, to int64) Events {
 
 		cycles := 0
 		for matureAt <= to {
-			if cycles >= autoCycleCap && plot.AutoSow && s.Coins >= s.SeedCost(c, crop) {
-				gross := expectedPayout(s, c, crop)
-				seedCost := s.SeedCost(c, crop)
-				if gross > seedCost {
-					remaining := (to - matureAt) / grow
-					n := remaining + 1
-					totalGross := satMul(gross, n)
-					totalSeeds := satMul(seedCost, n)
-					s.credit(totalGross)
-					if totalSeeds > s.Coins {
-						totalSeeds = s.Coins
+			if cycles >= autoCycleCap {
+				if plot.AutoSow && s.Coins >= s.SeedCost(c, crop) {
+					gross := expectedPayout(s, c, crop)
+					seedCost := s.SeedCost(c, crop)
+					if gross > seedCost {
+						remaining := (to - matureAt) / grow
+						n := remaining + 1
+						totalGross := satMul(gross, n)
+						totalSeeds := satMul(seedCost, n)
+						s.credit(totalGross)
+						if totalSeeds > s.Coins {
+							totalSeeds = s.Coins
+						}
+						s.Coins -= totalSeeds
+						ev.AutoCoins = satAdd(ev.AutoCoins, totalGross-totalSeeds)
+						ev.AutoHarvested[crop.ID] += int(n)
+						s.LifetimeHarvests = satAdd(s.LifetimeHarvests, n)
+						plot.PlantedAt = matureAt + remaining*grow
+						matureAt = plot.PlantedAt + grow
+						continue
 					}
-					s.Coins -= totalSeeds
-					ev.AutoCoins = satAdd(ev.AutoCoins, totalGross-totalSeeds)
-					ev.AutoHarvested[crop.ID] += int(n)
-					s.LifetimeHarvests = satAdd(s.LifetimeHarvests, n)
-					plot.PlantedAt = matureAt + remaining*grow
-					matureAt = plot.PlantedAt + grow
-					continue
 				}
+				// Batching doesn't apply (unprofitable crop or empty wallet).
+				// Stop here so one Advance stays bounded; PlantedAt is the
+				// loop's cursor, so later Advances settle the remainder.
+				break
 			}
 			payout, discovery, failed, golden := s.harvestPayout(c, crop)
 			s.credit(payout)
-			ev.AutoCoins += payout
+			ev.AutoCoins = satAdd(ev.AutoCoins, payout)
 			if failed {
 				ev.FailedHarvests[crop.ID]++
 			}
@@ -210,18 +216,20 @@ func (s *State) rollGiftArrival(c *content.Content, elapsed int64, online bool, 
 	if interval < 1 {
 		return
 	}
-	chance := elapsed * 100 / interval
-	if chance > 100 {
-		chance = 100
+	// Basis points (1/100 %): percent resolution would floor to zero for any
+	// interval over 100× the elapsed span, silencing online gifts entirely.
+	chance := elapsed * 10000 / interval
+	if chance > 10000 {
+		chance = 10000
 	}
-	if chance > 0 && s.roll100() < chance {
+	if chance > 0 && s.rollBp() < chance {
 		s.GiftPending = true
 		s.GiftArrivedAt = to
 		ev.GiftArrived = true
 	}
 }
 
-func (s *State) rollOnlineEvent(c *content.Content, to int64, ev *Events) {
+func (s *State) rollOnlineEvent(c *content.Content, elapsed, to int64, ev *Events) {
 	if len(c.Events) == 0 {
 		return
 	}
@@ -246,12 +254,14 @@ func (s *State) rollOnlineEvent(c *content.Content, to int64, ev *Events) {
 	if span > 0 {
 		interval += s.rollRange(0, span)
 	}
-	// Per-second chance for a ~interval-second mean wait.
-	chance := int64(100) / interval
+	// Per-tick chance in basis points for a ~interval-second mean wait.
+	// Percent resolution would floor to 0 here and a 1% floor made events
+	// fire every ~100s instead of the configured 15–25 minutes.
+	chance := elapsed * 10000 / interval
 	if chance < 1 {
 		chance = 1
 	}
-	if s.roll100() >= chance {
+	if s.rollBp() >= chance {
 		return
 	}
 	idx := int(s.rollRange(0, int64(len(c.Events)-1)))

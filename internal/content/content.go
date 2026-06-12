@@ -51,7 +51,7 @@ type Multiplier struct {
 	Name          string `toml:"name"`
 	Description   string `toml:"description"`
 	Cost          int64  `toml:"cost"`
-	CostGrowthPct int64 `toml:"cost_growth_pct"`
+	CostGrowthPct int64  `toml:"cost_growth_pct"`
 	MaxLevel      int    `toml:"max_level"`
 	Effect        string `toml:"effect"` // grow_speed_pct, sell_bonus_pct
 	EffectValue   int64  `toml:"effect_value"`
@@ -114,22 +114,22 @@ type GiftTuning struct {
 
 // GoldenHarvest tunes the rare golden harvest bonus.
 type GoldenHarvest struct {
-	ChancePct    int64 `toml:"chance_pct"`
-	Multiplier   int64 `toml:"multiplier"` // payout × multiplier / 10 (10× at 100)
+	ChancePct  int64 `toml:"chance_pct"`
+	Multiplier int64 `toml:"multiplier"` // payout × multiplier / 10 (10× at 100)
 }
 
 // MoonConfig tunes the cosmetic moon cycle and Moonberry bonus.
 type MoonConfig struct {
-	CycleDays          int64 `toml:"cycle_days"`
-	FullMoonSellBonusPct int64 `toml:"full_moon_sell_bonus_pct"`
-	MoonberryCropID    string `toml:"moonberry_crop_id"`
+	CycleDays            int64  `toml:"cycle_days"`
+	FullMoonSellBonusPct int64  `toml:"full_moon_sell_bonus_pct"`
+	MoonberryCropID      string `toml:"moonberry_crop_id"`
 }
 
 // CritterConfig tunes cosmetic critter visits on empty plots.
 type CritterConfig struct {
-	VisitChancePct int64  `toml:"visit_chance_pct"`
-	ShooRewardMin  int64  `toml:"shoo_reward_min"`
-	ShooRewardMax  int64  `toml:"shoo_reward_max"`
+	VisitChancePct int64    `toml:"visit_chance_pct"`
+	ShooRewardMin  int64    `toml:"shoo_reward_min"`
+	ShooRewardMax  int64    `toml:"shoo_reward_max"`
 	Kinds          []string `toml:"kind"`
 }
 
@@ -233,13 +233,13 @@ type Content struct {
 	Critters       CritterConfig
 	Flavor         Flavor
 
-	cropByID         map[string]*Crop
-	upgradeByID      map[string]*Upgrade
-	multiplierByID   map[string]*Multiplier
-	seedUpgradeByID  map[string]*SeedUpgrade
+	cropByID          map[string]*Crop
+	upgradeByID       map[string]*Upgrade
+	multiplierByID    map[string]*Multiplier
+	seedUpgradeByID   map[string]*SeedUpgrade
 	seedUpgradeByCrop map[string]*SeedUpgrade
-	zoneByID         map[string]*Zone
-	eventByID        map[string]*Event
+	zoneByID          map[string]*Zone
+	eventByID         map[string]*Event
 }
 
 // Load reads content from overrideDir when set, otherwise from the embedded

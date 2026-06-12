@@ -11,11 +11,11 @@ import (
 
 // SessionLimits tracks global and per-key concurrent sessions.
 type SessionLimits struct {
-	mu              sync.Mutex
-	global          int
-	perKey          map[string]int
-	maxGlobal       int
-	maxPerKey       int
+	mu        sync.Mutex
+	global    int
+	perKey    map[string]int
+	maxGlobal int
+	maxPerKey int
 }
 
 // NewSessionLimits creates a limiter with the given caps.

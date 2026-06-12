@@ -23,11 +23,11 @@ type saveKey struct {
 // actor owns one active save. All fields below the mailbox are touched only
 // from the run loop goroutine.
 type actor struct {
-	key   saveKey
-	mgr   *Manager
-	reqs  chan func()
-	stop  chan struct{} // closed by the manager to end the loop
-	done  chan struct{} // closed by the loop on exit, after the final flush
+	key  saveKey
+	mgr  *Manager
+	reqs chan func()
+	stop chan struct{} // closed by the manager to end the loop
+	done chan struct{} // closed by the loop on exit, after the final flush
 
 	state   *sim.State
 	dirty   bool

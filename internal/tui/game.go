@@ -3,6 +3,7 @@ package tui
 
 import (
 	"time"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -134,8 +135,11 @@ func NewGame(id identity.SessionIdentity, res game.AttachResult, c *content.Cont
 	return g
 }
 
+// Init starts exactly one tick chain: refresh delivers an immediate tickMsg,
+// and every tickMsg handler schedules the next tick. Adding tickCmd here too
+// would run a second, parallel 1Hz chain forever.
 func (g *Game) Init() tea.Cmd {
-	return tea.Batch(g.refresh(), tickCmd(), g.waitKick())
+	return tea.Batch(g.refresh(), g.waitKick())
 }
 
 func (g *Game) refresh() tea.Cmd {
@@ -543,8 +547,15 @@ func (g *Game) handleNameKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cm
 			g.nameInput = string(runes[:len(runes)-1])
 		}
 	default:
-		if len(key) == 1 && key[0] >= 32 {
-			g.nameInput += key
+		if key == "space" {
+			key = " "
+		}
+		// Accept any single printable rune (not just ASCII), capped at the
+		// sim's 24-rune limit so the overlay can't grow unbounded from
+		// held-down keys before Enter validates it.
+		r := []rune(key)
+		if len(r) == 1 && unicode.IsPrint(r[0]) && len([]rune(g.nameInput)) < 24 {
+			g.nameInput += string(r)
 		}
 	}
 	return g, nil

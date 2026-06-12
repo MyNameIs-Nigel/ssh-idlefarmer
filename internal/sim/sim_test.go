@@ -644,7 +644,7 @@ func TestFlavorDiscoveriesAreSeededAndOptional(t *testing.T) {
 func TestIsqrtBoundaries(t *testing.T) {
 	cases := map[int64]int64{
 		0: 0, 1: 1, 3: 1, 4: 2, 99: 9, 100: 10,
-		(1 << 62): 1 << 31, // exact power of four
+		(1 << 62): 1 << 31,    // exact power of four
 		1<<63 - 1: 3037000499, // MaxInt64: must not overflow the loops
 	}
 	for n, want := range cases {
@@ -797,5 +797,95 @@ func TestSalvageUpgradeImprovesPayout(t *testing.T) {
 	upgraded := s.SalvageValue(c, crop)
 	if upgraded <= base {
 		t.Fatalf("salvage should improve: %d -> %d", base, upgraded)
+	}
+}
+
+// Regression: percent-resolution rolls floored to zero for online gifts
+// (interval 1200s vs 1-2s ticks), so gifts could never arrive while
+// connected. Counts arrivals over many simulated ticks and checks the rate
+// lands near the configured mean interval.
+func TestOnlineGiftArrivalRateMatchesInterval(t *testing.T) {
+	c := testContent(t)
+	s := newTestState(t, c)
+
+	const ticks = 200_000
+	arrivals := 0
+	end := s.UpdatedAt + ticks // Advance moves UpdatedAt, so bound up front
+	for now := s.UpdatedAt + 1; now <= end; now++ {
+		Advance(s, c, now)
+		if s.GiftPending {
+			arrivals++
+			s.GiftPending = false // unblock the next roll
+		}
+	}
+	want := ticks / int(c.Gifts.OnlineIntervalSec) // ~166 at 1200s
+	if arrivals == 0 {
+		t.Fatal("online gifts never arrive (chance floored to zero)")
+	}
+	if arrivals < want/2 || arrivals > want*2 {
+		t.Fatalf("gift arrivals = %d over %d ticks, want around %d", arrivals, ticks, want)
+	}
+}
+
+// Regression: a 1%-per-tick floor made events fire every ~100s instead of
+// the configured 900-1500s mean interval.
+func TestOnlineEventRateMatchesInterval(t *testing.T) {
+	c := testContent(t)
+	s := newTestState(t, c)
+
+	const ticks = 400_000
+	started := 0
+	end := s.UpdatedAt + ticks // Advance moves UpdatedAt, so bound up front
+	for now := s.UpdatedAt + 1; now <= end; now++ {
+		ev := Advance(s, c, now)
+		if ev.EventStarted != "" {
+			started++
+		}
+	}
+	// Mean cycle = mean interval (~1200s) + mean duration (~135s).
+	meanCycle := (c.EventsConfig.MinIntervalSec+c.EventsConfig.MaxIntervalSec)/2 +
+		(c.EventsConfig.MinDurationSec+c.EventsConfig.MaxDurationSec)/2
+	want := ticks / int(meanCycle)
+	if started == 0 {
+		t.Fatal("events never start")
+	}
+	if started < want/2 || started > want*2 {
+		t.Fatalf("events started = %d over %d ticks, want around %d (mean cycle %ds)",
+			started, ticks, want, meanCycle)
+	}
+}
+
+// Regression: Hardier Strains are run-scoped (bought with coins in the
+// Market) but survived rebirth alongside the permanent upgrades.
+func TestRebirthResetsSeedUpgrades(t *testing.T) {
+	c := testContent(t)
+	s := newTestState(t, c)
+	s.RunEarnings = c.Prestige.MinEarnings
+	s.SeedUpgrades["gamble"] = 2
+
+	if _, err := Rebirth(s, c, 2000); err != nil {
+		t.Fatalf("rebirth: %v", err)
+	}
+	if len(s.SeedUpgrades) != 0 {
+		t.Fatalf("seed upgrades survived rebirth: %v", s.SeedUpgrades)
+	}
+}
+
+// Regression: the ±20% gift jitter was applied after the ceiling clamp, so
+// rich runs could be paid up to 20% above the configured ceiling.
+func TestGiftCoinRewardNeverExceedsCeiling(t *testing.T) {
+	c := testContent(t)
+	s := newTestState(t, c)
+	s.RunEarnings = 1 << 50 // base lands on the ceiling before jitter
+
+	for i := 0; i < 200; i++ {
+		s.GiftPending = true
+		res, err := RedeemGift(s, c)
+		if err != nil {
+			t.Fatalf("redeem: %v", err)
+		}
+		if res.Coins > c.Gifts.CoinRewardCeiling {
+			t.Fatalf("gift paid %d, ceiling is %d", res.Coins, c.Gifts.CoinRewardCeiling)
+		}
 	}
 }

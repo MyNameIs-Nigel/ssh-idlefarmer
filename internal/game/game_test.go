@@ -218,6 +218,11 @@ func TestShutdownFlushesAndKicksEveryone(t *testing.T) {
 	if _, _, err := res.Session.Advance(2000); err != ErrSessionClosed {
 		t.Fatalf("expected ErrSessionClosed after shutdown, got %v", err)
 	}
+	// The SSH listener may still be up while the flush runs; a connection
+	// landing in that window must be refused, not given an unflushed actor.
+	if _, err := m.Attach(context.Background(), id, "k", 2000, nil); err != ErrShuttingDown {
+		t.Fatalf("expected ErrShuttingDown for attach during shutdown, got %v", err)
+	}
 
 	// A fresh manager over the same database sees the flushed change —
 	// this is the redeploy-loses-nothing guarantee.
