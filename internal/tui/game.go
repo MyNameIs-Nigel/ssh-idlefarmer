@@ -228,37 +228,36 @@ func (g *Game) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Global keys.
 	switch key {
 	case "q":
+		if g.scr == scrHelp {
+			g.scr = scrFarm
+			return g, nil
+		}
 		return g, tea.Quit
 	case "g":
 		return g.redeemGift()
-	case "f", "1":
+	case "1":
 		g.scr = scrFarm
 		return g, nil
-	case "m", "2":
+	case "2":
 		g.scr = scrMarket
 		return g, nil
-	case "l", "3":
+	case "3":
 		g.scr = scrLand
 		return g, nil
-	case "r", "4":
+	case "4":
 		g.scr = scrRebirth
 		return g, nil
-	case "p", "5":
+	case "5":
 		g.scr = scrProgress
 		return g, nil
-	case "s", "6":
+	case "6":
 		g.scr = scrStats
 		return g, nil
-	case "?", "7":
-		g.scr = scrHelp
-		return g, nil
 	case "tab":
-		for i, s := range screenOrder {
-			if s == g.scr {
-				g.scr = screenOrder[(i+1)%len(screenOrder)]
-				break
-			}
-		}
+		g.cycleScreen(true)
+		return g, nil
+	case "shift+tab":
+		g.cycleScreen(false)
 		return g, nil
 	}
 
@@ -283,11 +282,24 @@ func (g *Game) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return g, nil
 }
 
+func (g *Game) cycleScreen(forward bool) {
+	for i, s := range screenOrder {
+		if s == g.scr {
+			if forward {
+				g.scr = screenOrder[(i+1)%len(screenOrder)]
+			} else {
+				g.scr = screenOrder[(i-1+len(screenOrder))%len(screenOrder)]
+			}
+			return
+		}
+	}
+}
+
 func (g *Game) handleFarmKey(key string) (tea.Model, tea.Cmd) {
 	st := g.snap.State
 	cols := g.farmColumns()
 	switch key {
-	case "left", "h":
+	case "left":
 		if g.cursor > 0 {
 			g.cursor--
 		}
@@ -295,11 +307,11 @@ func (g *Game) handleFarmKey(key string) (tea.Model, tea.Cmd) {
 		if g.cursor < len(st.Plots)-1 {
 			g.cursor++
 		}
-	case "up", "k":
+	case "up":
 		if g.cursor-cols >= 0 {
 			g.cursor -= cols
 		}
-	case "down", "j":
+	case "down":
 		if g.cursor+cols < len(st.Plots) {
 			g.cursor += cols
 		}
@@ -314,7 +326,7 @@ func (g *Game) handleFarmKey(key string) (tea.Model, tea.Cmd) {
 				g.addNotice("Shooed the " + sanitizeText(st.Plots[g.cursor].Critter) + " (+" + money(reward) + " coins).")
 			}
 		}
-	case "enter", "space", " ", "p":
+	case "enter", "space", " ":
 		if g.cursor >= len(st.Plots) {
 			return g, nil
 		}
@@ -384,13 +396,13 @@ func (g *Game) handleUpgradeKey(key string) (tea.Model, tea.Cmd) {
 		if g.upgradeIdx < len(st.Plots)-1 {
 			g.upgradeIdx++
 		}
-	case "h":
+	case "1":
 		snap, ach, err := g.sess.UpgradePlotAuto(g.now, g.upgradeIdx, "harvest")
 		g.applyAction(snap, ach, err)
 		if err == nil {
 			g.addNotice("Plot " + itoa(g.upgradeIdx+1) + " now auto-harvests!")
 		}
-	case "s":
+	case "2":
 		snap, ach, err := g.sess.UpgradePlotAuto(g.now, g.upgradeIdx, "sow")
 		g.applyAction(snap, ach, err)
 		if err == nil {
@@ -530,7 +542,7 @@ func (g *Game) handleStatsKey(key string) (tea.Model, tea.Cmd) {
 
 func (g *Game) handleNameKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key {
-	case "esc":
+	case "esc", "q":
 		g.overlay = ovNone
 	case "enter":
 		snap, err := g.sess.SetFarmName(g.now, g.nameInput)
