@@ -187,6 +187,40 @@ func TestScreenNavigationAndHelp(t *testing.T) {
 	}
 }
 
+func TestHelpGameplayPage(t *testing.T) {
+	f := newFixture(t)
+	base := time.Now().Unix()
+	g := f.newGame(t, base)
+	g = press(t, g, "x") // dismiss onboarding
+	g, _ = tick(t, g, base)
+	g = press(t, g, "6", "tab")
+	g = press(t, g, "right")
+
+	if !strings.Contains(view(g), "Gameplay") {
+		t.Fatalf("expected Gameplay tab, got:\n%s", view(g))
+	}
+
+	body := g.viewHelpGameplay()
+	for _, want := range []string{
+		"Random events",
+		"Risky crops",
+		"Glimmercorn",
+		"Rebirth",
+		"Gift parcels",
+		"Mercy plant",
+		"Golden harvest",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("gameplay help body: expected %q, got:\n%s", want, body)
+		}
+	}
+	for _, ev := range g.content.Events {
+		if !strings.Contains(body, ev.Name) {
+			t.Fatalf("gameplay help body: expected event %q, got:\n%s", ev.Name, body)
+		}
+	}
+}
+
 func TestResizeRelayoutsAndTinyTerminalDegrades(t *testing.T) {
 	f := newFixture(t)
 	base := time.Now().Unix()
