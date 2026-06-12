@@ -744,6 +744,22 @@ func (g *Game) viewHelpControls() string {
 		styleHint.Render("  Your SSH key is your identity; the username picks the save slot.")
 }
 
+func (g *Game) helpTextWidth() int {
+	return max(g.contentWidth()-2, 40)
+}
+
+func (g *Game) helpBody(text string) string {
+	return styleValue.Render(wrapIndent(g.helpTextWidth(), "  ", text))
+}
+
+func (g *Game) helpHint(text string) string {
+	return styleHint.Render(wrapIndent(g.helpTextWidth(), "  ", text))
+}
+
+func (g *Game) helpSubHint(text string) string {
+	return styleHint.Render(wrapIndent(g.helpTextWidth(), "    ", text))
+}
+
 func (g *Game) viewHelpGameplay() string {
 	c := g.content
 	ss := g.starseedLabel()
@@ -756,59 +772,57 @@ func (g *Game) viewHelpGameplay() string {
 
 	var b strings.Builder
 	b.WriteString(styleSection.Render("Random events") + "\n")
-	b.WriteString(styleValue.Render("  While online, a banner announces a random event for "+
+	b.WriteString(g.helpBody("While online, a banner announces a random event for "+
 		duration(ec.MinDurationSec)+"–"+duration(ec.MaxDurationSec)+
-		". Act before it expires!\n"))
+		". Act before it expires!") + "\n")
 	for _, ev := range c.Events {
-		b.WriteString("  " + styleReady.Render(sanitizeText(ev.Name)) + styleValue.Render(" — "+eventHelpEffect(ev)+"\n"))
-		b.WriteString(styleHint.Render("    "+eventHelpAction(ev)+"\n"))
+		b.WriteString(styleReady.Render(wrapIndent(g.helpTextWidth(), "  ",
+			sanitizeText(ev.Name)+" — "+eventHelpEffect(ev))) + "\n")
+		if action := eventHelpAction(ev); action != "" {
+			b.WriteString(g.helpSubHint(action) + "\n")
+		}
 	}
-	b.WriteString(styleHint.Render("  Stacks with Market upgrades (Merchant's Scale, Fertilizer).\n"))
+	b.WriteString(g.helpHint("Stacks with Market upgrades (Merchant's Scale, Fertilizer).") + "\n")
 
 	b.WriteString("\n" + styleSection.Render("Risky crops") + "\n")
-	b.WriteString(styleValue.Render("  Glimmercorn, Moonberry, and Thunderpod can fail at harvest.\n"))
-	b.WriteString(styleValue.Render("  A failed harvest pays salvage instead of full sell value.\n"))
-	b.WriteString(styleValue.Render("  Hardier Strain upgrades (Market tab) raise the salvage floor:\n"))
-	b.WriteString(styleValue.Render("    Lv 0: 1/8 · Lv 1: 1/4 · Lv 2: 1/2 · Lv 3+: 3/4 of sell value.\n"))
+	b.WriteString(g.helpBody("Glimmercorn, Moonberry, and Thunderpod can fail at harvest. "+
+		"A failed harvest pays salvage instead of full sell value. "+
+		"Hardier Strain upgrades (Market tab) raise the salvage floor: "+
+		"Lv 0: 1/8 · Lv 1: 1/4 · Lv 2: 1/2 · Lv 3+: 3/4 of sell value.") + "\n")
 
 	b.WriteString("\n" + styleSection.Render("Rebirth & "+ss) + "\n")
-	b.WriteString(styleValue.Render("  Earn "+money(c.Prestige.MinEarnings)+
-		"+ coins in one run, then rebirth for "+ss+".\n"))
-	b.WriteString(styleValue.Render("  Gain: isqrt(run earnings ÷ "+money(c.Prestige.Divisor)+
-		") — e.g. "+money(c.Prestige.MinEarnings)+" run earnings → 10 "+ss+".\n"))
-	b.WriteString(styleValue.Render("  Kept: "+ss+", permanent upgrades, achievements, crop unlocks.\n"))
-	b.WriteString(styleValue.Render("  Lost: coins, plots, crops, multipliers, zones, plot automation.\n"))
+	b.WriteString(g.helpBody("Earn "+money(c.Prestige.MinEarnings)+
+		"+ coins in one run, then rebirth for "+ss+". "+
+		"Gain: isqrt(run earnings ÷ "+money(c.Prestige.Divisor)+
+		") — e.g. "+money(c.Prestige.MinEarnings)+" run earnings → 10 "+ss+".") + "\n")
+	b.WriteString(g.helpBody("Kept: "+ss+", permanent upgrades, achievements, crop unlocks. "+
+		"Lost: coins, plots, crops, multipliers, zones, plot automation.") + "\n")
 
 	b.WriteString("\n" + styleSection.Render("Automation") + "\n")
-	b.WriteString(styleValue.Render("  Auto-harvest gathers ready crops on that plot each tick.\n"))
-	b.WriteString(styleValue.Render("  Auto-sow replants the same crop after each harvest (per tick),\n"))
-	b.WriteString(styleValue.Render("  if you can afford the seed. Needs auto-harvest on that plot and\n"))
-	b.WriteString(styleValue.Render("  "+money(c.PlotAutomation.AutoSowMinEarnings)+
-		" lifetime earnings. Resets on rebirth.\n"))
-	b.WriteString(styleValue.Render("  Crops keep growing offline; auto plots simulate harvest cycles\n"))
-	b.WriteString(styleValue.Render("  when you reconnect.\n"))
+	b.WriteString(g.helpBody("Auto-harvest gathers ready crops on that plot each tick. "+
+		"Auto-sow replants the same crop after each harvest (per tick) if you can "+
+		"afford the seed. Needs auto-harvest on that plot and "+
+		money(c.PlotAutomation.AutoSowMinEarnings)+" lifetime earnings. Resets on rebirth. "+
+		"Crops keep growing offline; auto plots simulate harvest cycles when you reconnect.") + "\n")
 
 	b.WriteString("\n" + styleSection.Render("Gift parcels") + "\n")
-	b.WriteString(styleValue.Render("  One parcel at a time; arrives about every "+
+	b.WriteString(g.helpBody("One parcel at a time; arrives about every "+
 		duration(c.Gifts.OnlineIntervalSec)+" online or "+
-		duration(c.Gifts.OfflineIntervalSec)+" away.\n"))
-	b.WriteString(styleValue.Render("  Press g to redeem. Usually coins ("+
-		money(c.Gifts.CoinRewardFloor)+"–"+money(c.Gifts.CoinRewardCeiling)+
-		", scaled by run earnings).\n"))
-	b.WriteString(styleValue.Render("  After your first rebirth, "+
-		money(c.Gifts.StarseedChancePct)+"% chance of "+ss+" instead.\n"))
+		duration(c.Gifts.OfflineIntervalSec)+" away. Press g to redeem. "+
+		"Usually coins ("+money(c.Gifts.CoinRewardFloor)+"–"+money(c.Gifts.CoinRewardCeiling)+
+		", scaled by run earnings). After your first rebirth, "+
+		money(c.Gifts.StarseedChancePct)+"% chance of "+ss+" instead.") + "\n")
 
 	b.WriteString("\n" + styleSection.Render("Mercy plant") + "\n")
-	b.WriteString(styleValue.Render("  Broke with empty plots? The cheapest unlocked seed plants\n"))
-	b.WriteString(styleValue.Render("  for FREE — \"the land provides\".\n"))
+	b.WriteString(g.helpBody("Broke with empty plots? The cheapest unlocked seed plants "+
+		"for FREE — \"the land provides\".") + "\n")
 
 	b.WriteString("\n" + styleSection.Render("Golden harvest & moon") + "\n")
-	b.WriteString(styleValue.Render("  Any harvest has a "+money(gh.ChancePct)+
-		"% chance to pay "+money(goldenMult)+"×.\n"))
-	b.WriteString(styleValue.Render("  Moon phases cycle every "+money(c.Moon.CycleDays)+
-		" days in the header. Full Moon gives\n"))
-	b.WriteString(styleValue.Render("  Moonberry +"+money(c.Moon.FullMoonSellBonusPct)+
-		"% sell bonus.\n"))
+	b.WriteString(g.helpBody("Any harvest has a "+money(gh.ChancePct)+
+		"% chance to pay "+money(goldenMult)+"×. "+
+		"Moon phases cycle every "+money(c.Moon.CycleDays)+
+		" days in the header. Full Moon gives Moonberry +"+
+		money(c.Moon.FullMoonSellBonusPct)+"% sell bonus.") + "\n")
 
 	return strings.TrimRight(b.String(), "\n")
 }
