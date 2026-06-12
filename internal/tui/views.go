@@ -195,17 +195,17 @@ func (g *Game) viewFooter() string {
 	var hints string
 	switch {
 	case g.overlay == ovPicker:
-		hints = "↑/↓ choose · enter plant · esc cancel"
+		hints = "↑/↓ choose · enter plant · esc/q close"
 	case g.overlay == ovUpgrade:
-		hints = "↑/↓ plot · h auto-harvest · s auto-sow · esc cancel"
+		hints = "↑/↓ plot · 1 auto-harvest · 2 auto-sow · esc/q close"
 	case g.overlay == ovName:
-		hints = "type name · enter save · esc cancel"
+		hints = "type name · enter save · esc/q close"
 	case g.overlay == ovRebirthConfirm:
-		hints = "y rebirth · n keep farming"
+		hints = "y rebirth · n/esc/q keep farming"
 	case g.overlay == ovOnboarding || g.overlay == ovAway:
 		hints = "press any key to continue"
 	case g.scr == scrFarm:
-		hints = "←↑↓→ · enter plant/harvest · a harvest all · u upgrades · g gift · q quit"
+		hints = "←↑↓→ · enter plant/harvest · a harvest all · u upgrades · g gift · ? help · q leave"
 	case g.scr == scrMarket:
 		hints = "↑/↓ select · enter buy · q quit"
 	case g.scr == scrLand:
@@ -217,7 +217,7 @@ func (g *Game) viewFooter() string {
 	case g.scr == scrStats:
 		hints = "n name farm · t toggle lucky finds · q quit"
 	default:
-		hints = "1-6 screens · g gift · q quit"
+		hints = "1-6 screens · tab/shift+tab cycle · g gift · q leave"
 	}
 	return styleHint.Render(truncate(hints, g.contentWidth()-1))
 }
@@ -419,12 +419,12 @@ func (g *Game) viewUpgrade() string {
 		if plot.AutoHarvest {
 			line += " ⚙"
 		} else {
-			line += " — harvest " + money(hCost) + "c (h)"
+			line += " — harvest " + money(hCost) + "c (1)"
 		}
 		if plot.AutoSow {
 			line += " ♻"
 		} else if plot.AutoHarvest {
-			line += " — sow " + money(sCost) + "c (s)"
+			line += " — sow " + money(sCost) + "c (2)"
 		}
 		b.WriteString(marker + styleValue.Render(line) + "\n")
 	}
@@ -435,7 +435,7 @@ func (g *Game) viewUpgrade() string {
 func (g *Game) viewName() string {
 	text := styleSection.Render("Name your farm") + "\n\n" +
 		styleValue.Render("> "+sanitizeText(g.nameInput)+"_") + "\n\n" +
-		styleHint.Render("Enter to save · Esc to cancel")
+		styleHint.Render("Enter to save · esc/q cancel")
 	return styleBox.Render(text)
 }
 
@@ -721,7 +721,7 @@ func (g *Game) helpTabs() string {
 		gameplay = styleNavOn.Render(gameplay)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, controls, " ", gameplay) +
-		"\n" + styleHint.Render("  ← → switch pages · esc back to farm")
+		"\n" + styleHint.Render("  ← → switch pages · esc/q back to farm")
 }
 
 func (g *Game) viewHelpControls() string {
@@ -731,8 +731,10 @@ func (g *Game) viewHelpControls() string {
 			"  growing while you're away. Earn coins, buy plots and upgrades, and\n"+
 			"  rebirth for "+ss+" — permanent bonuses that make every later run faster.") + "\n\n" +
 		styleSection.Render("Keys") + "\n" +
-		styleValue.Render("  1-6 / f m l r p s   switch screens          ? help\n"+
-			"  ←↑↓→ or hjkl      move around the farm\n"+
+		styleValue.Render("  1-6               switch screens\n"+
+			"  ?                 help\n"+
+			"  tab / shift+tab   cycle screens forward / back\n"+
+			"  ←↑↓→              move around the farm\n"+
 			"  enter / space     plant (empty) or harvest (ready)\n"+
 			"  a                 harvest everything that's ready\n"+
 			"  u                 plot automation upgrades\n"+
@@ -740,7 +742,8 @@ func (g *Game) viewHelpControls() string {
 			"  x                 shoo a critter off a plot\n"+
 			"  n                 name your farm (stats screen)\n"+
 			"  R                 rebirth (rebirth screen, with confirmation)\n"+
-			"  q / ctrl+c        leave (progress is saved automatically)") + "\n\n" +
+			"  esc / q           close menus and overlays\n"+
+			"  q / ctrl+c        leave the game (progress is saved automatically)") + "\n\n" +
 		styleHint.Render("  Your SSH key is your identity; the username picks the save slot.")
 }
 

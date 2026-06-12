@@ -75,6 +75,8 @@ func key(s string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyRight}
 	case "tab":
 		return tea.KeyPressMsg{Code: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
 	default:
 		r := []rune(s)[0]
 		return tea.KeyPressMsg{Code: r, Text: s}
@@ -159,18 +161,33 @@ func TestScreenNavigationAndHelp(t *testing.T) {
 	g, _ = tick(t, g, base)
 
 	screens := map[string]string{
-		"m": "Multipliers",
-		"l": "Your land",
-		"r": "Next rebirth unlocks",
-		"s": "Achievements",
-		"?": "How it works",
-		"f": "Plot 1",
+		"2": "Multipliers",
+		"3": "Your land",
+		"4": "Next rebirth unlocks",
+		"6": "Achievements",
+		"1": "Plot 1",
 	}
 	for k, want := range screens {
 		g = press(t, g, k)
 		if !strings.Contains(view(g), want) {
 			t.Fatalf("key %q: expected %q on screen, got:\n%s", k, want, view(g))
 		}
+	}
+	g = press(t, g, "6", "tab")
+	if !strings.Contains(view(g), "How it works") {
+		t.Fatalf("tab from stats should reach help, got:\n%s", view(g))
+	}
+	g = press(t, g, "esc")
+	if !strings.Contains(view(g), "Plot 1") {
+		t.Fatalf("esc from help should return to farm, got:\n%s", view(g))
+	}
+	g = press(t, g, "6", "tab", "shift+tab")
+	if !strings.Contains(view(g), "Achievements") {
+		t.Fatalf("shift+tab from help should return to stats, got:\n%s", view(g))
+	}
+	g = press(t, g, "?")
+	if !strings.Contains(view(g), "How it works") {
+		t.Fatalf("? should open help, got:\n%s", view(g))
 	}
 }
 
@@ -180,7 +197,7 @@ func TestHelpGameplayPage(t *testing.T) {
 	g := f.newGame(t, base)
 	g = press(t, g, "x") // dismiss onboarding
 	g, _ = tick(t, g, base)
-	g = press(t, g, "?")
+	g = press(t, g, "6", "tab")
 	g = press(t, g, "right")
 
 	if !strings.Contains(view(g), "Gameplay") {
@@ -242,7 +259,7 @@ func TestUnaffordableActionsAreExplained(t *testing.T) {
 	g, _ = tick(t, g, base)
 
 	// 25 starting coins; the first plot costs 50.
-	g = press(t, g, "l", "enter")
+	g = press(t, g, "3", "enter")
 	if !strings.Contains(view(g), "not enough coins") {
 		t.Fatalf("unaffordable plot should be explained, got:\n%s", view(g))
 	}
@@ -299,7 +316,7 @@ func TestRebirthPreviewConfirmAndReset(t *testing.T) {
 	g := f.newGame(t, base+1)
 	g, _ = tick(t, g, base+1)
 	g = press(t, g, "x") // dismiss the away/achievement overlay if shown
-	g = press(t, g, "r")
+	g = press(t, g, "4")
 	out := view(g)
 	if !strings.Contains(out, "50 Starseeds") { // isqrt(250000/100)
 		t.Fatalf("rebirth preview should show the gain, got:\n%s", out)
@@ -375,7 +392,7 @@ func TestIdleSessionGetsTuckedIn(t *testing.T) {
 
 	// Activity keeps the session alive.
 	g, _ = tick(t, g, base+59)
-	g = press(t, g, "s") // counts as input at base+59
+	g = press(t, g, "6") // counts as input at base+59
 	g, cmd := tick(t, g, base+100)
 	if cmd == nil {
 		t.Fatal("tick chain must continue")
