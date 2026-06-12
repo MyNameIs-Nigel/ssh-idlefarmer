@@ -102,7 +102,9 @@ type Game struct {
 	marketIdx   int
 	upgradeIdx  int
 	progressIdx int
-	nameInput   string
+	helpPage   int
+	helpScroll int
+	nameInput  string
 
 	notices    []notice
 	away       sim.Events
@@ -251,6 +253,8 @@ func (g *Game) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return g, nil
 	case "?", "7":
 		g.scr = scrHelp
+		g.helpPage = 0
+		g.helpScroll = 0
 		return g, nil
 	case "tab":
 		for i, s := range screenOrder {
@@ -276,8 +280,26 @@ func (g *Game) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case scrStats:
 		return g.handleStatsKey(key)
 	case scrHelp:
-		if key == "esc" {
+		switch key {
+		case "esc":
 			g.scr = scrFarm
+		case "left", "h":
+			if g.helpPage > 0 {
+				g.helpPage--
+				g.helpScroll = 0
+			}
+		case "right":
+			if g.helpPage < 1 {
+				g.helpPage++
+				g.helpScroll = 0
+			}
+		case "up", "k":
+			if g.helpScroll > 0 {
+				g.helpScroll--
+			}
+		case "down", "j":
+			g.helpScroll++
+			g.clampHelpScroll()
 		}
 	}
 	return g, nil

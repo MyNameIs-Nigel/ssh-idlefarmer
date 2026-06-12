@@ -666,6 +666,65 @@ func (g *Game) viewStats() string {
 }
 
 func (g *Game) viewHelp() string {
+	tabs := g.helpTabs()
+	body := g.viewHelpControls()
+	if g.helpPage == 1 {
+		body = g.viewHelpGameplay()
+	}
+	full := tabs + "\n\n" + body
+	lines := strings.Split(full, "\n")
+	visible := g.helpVisibleLines()
+	if len(lines) <= visible {
+		return full
+	}
+	start := g.helpScroll
+	maxStart := len(lines) - visible
+	if start > maxStart {
+		start = maxStart
+	}
+	end := start + visible
+	if end > len(lines) {
+		end = len(lines)
+	}
+	out := strings.Join(lines[start:end], "\n")
+	if start > 0 || end < len(lines) {
+		out += "\n" + styleHint.Render("  ↑↓ scroll · ← → pages")
+	}
+	return out
+}
+
+func (g *Game) helpVisibleLines() int {
+	ch := g.contentHeight()
+	// Reserve space for header, nav, tabs, footer, and frame padding.
+	return max(ch-14, 6)
+}
+
+func (g *Game) clampHelpScroll() {
+	body := g.viewHelpControls()
+	if g.helpPage == 1 {
+		body = g.viewHelpGameplay()
+	}
+	lines := strings.Split(g.helpTabs()+"\n\n"+body, "\n")
+	maxStart := max(len(lines)-g.helpVisibleLines(), 0)
+	if g.helpScroll > maxStart {
+		g.helpScroll = maxStart
+	}
+}
+
+func (g *Game) helpTabs() string {
+	controls, gameplay := "Controls", "Gameplay"
+	if g.helpPage == 0 {
+		controls = styleNavOn.Render(controls)
+		gameplay = styleNavOff.Render(gameplay)
+	} else {
+		controls = styleNavOff.Render(controls)
+		gameplay = styleNavOn.Render(gameplay)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, controls, " ", gameplay) +
+		"\n" + styleHint.Render("  ← → switch pages · esc back to farm")
+}
+
+func (g *Game) viewHelpControls() string {
 	ss := g.starseedLabel()
 	return styleSection.Render("How it works") + "\n\n" +
 		styleValue.Render("  Plant crops, go live your life, come back and harvest. Crops keep\n"+
@@ -683,6 +742,115 @@ func (g *Game) viewHelp() string {
 			"  R                 rebirth (rebirth screen, with confirmation)\n"+
 			"  q / ctrl+c        leave (progress is saved automatically)") + "\n\n" +
 		styleHint.Render("  Your SSH key is your identity; the username picks the save slot.")
+}
+
+func (g *Game) helpTextWidth() int {
+	return max(g.contentWidth()-2, 40)
+}
+
+func (g *Game) helpBody(text string) string {
+	return styleValue.Render(wrapIndent(g.helpTextWidth(), "  ", text))
+}
+
+func (g *Game) helpHint(text string) string {
+	return styleHint.Render(wrapIndent(g.helpTextWidth(), "  ", text))
+}
+
+func (g *Game) helpSubHint(text string) string {
+	return styleHint.Render(wrapIndent(g.helpTextWidth(), "    ", text))
+}
+
+func (g *Game) viewHelpGameplay() string {
+	c := g.content
+	ss := g.starseedLabel()
+	ec := c.EventsConfig
+	gh := c.GoldenHarvest
+	goldenMult := gh.Multiplier / 10
+	if goldenMult < 1 {
+		goldenMult = 1
+	}
+
+	var b strings.Builder
+	b.WriteString(styleSection.Render("Random events") + "\n")
+	b.WriteString(g.helpBody("While online, a banner announces a random event for "+
+		duration(ec.MinDurationSec)+"–"+duration(ec.MaxDurationSec)+
+		". Act before it expires!") + "\n")
+	for _, ev := range c.Events {
+		b.WriteString(styleReady.Render(wrapIndent(g.helpTextWidth(), "  ",
+			sanitizeText(ev.Name)+" — "+eventHelpEffect(ev))) + "\n")
+		if action := eventHelpAction(ev); action != "" {
+			b.WriteString(g.helpSubHint(action) + "\n")
+		}
+	}
+	b.WriteString(g.helpHint("Stacks with Market upgrades (Merchant's Scale, Fertilizer).") + "\n")
+
+	b.WriteString("\n" + styleSection.Render("Risky crops") + "\n")
+	b.WriteString(g.helpBody("Glimmercorn, Moonberry, and Thunderpod can fail at harvest. "+
+		"A failed harvest pays salvage instead of full sell value. "+
+		"Hardier Strain upgrades (Market tab) raise the salvage floor: "+
+		"Lv 0: 1/8 · Lv 1: 1/4 · Lv 2: 1/2 · Lv 3+: 3/4 of sell value.") + "\n")
+
+	b.WriteString("\n" + styleSection.Render("Rebirth & "+ss) + "\n")
+	b.WriteString(g.helpBody("Earn "+money(c.Prestige.MinEarnings)+
+		"+ coins in one run, then rebirth for "+ss+". "+
+		"Gain: isqrt(run earnings ÷ "+money(c.Prestige.Divisor)+
+		") — e.g. "+money(c.Prestige.MinEarnings)+" run earnings → 10 "+ss+".") + "\n")
+	b.WriteString(g.helpBody("Kept: "+ss+", permanent upgrades, achievements, crop unlocks. "+
+		"Lost: coins, plots, crops, multipliers, zones, plot automation.") + "\n")
+
+	b.WriteString("\n" + styleSection.Render("Automation") + "\n")
+	b.WriteString(g.helpBody("Auto-harvest gathers ready crops on that plot each tick. "+
+		"Auto-sow replants the same crop after each harvest (per tick) if you can "+
+		"afford the seed. Needs auto-harvest on that plot and "+
+		money(c.PlotAutomation.AutoSowMinEarnings)+" lifetime earnings. Resets on rebirth. "+
+		"Crops keep growing offline; auto plots simulate harvest cycles when you reconnect.") + "\n")
+
+	b.WriteString("\n" + styleSection.Render("Gift parcels") + "\n")
+	b.WriteString(g.helpBody("One parcel at a time; arrives about every "+
+		duration(c.Gifts.OnlineIntervalSec)+" online or "+
+		duration(c.Gifts.OfflineIntervalSec)+" away. Press g to redeem. "+
+		"Usually coins ("+money(c.Gifts.CoinRewardFloor)+"–"+money(c.Gifts.CoinRewardCeiling)+
+		", scaled by run earnings). After your first rebirth, "+
+		money(c.Gifts.StarseedChancePct)+"% chance of "+ss+" instead.") + "\n")
+
+	b.WriteString("\n" + styleSection.Render("Mercy plant") + "\n")
+	b.WriteString(g.helpBody("Broke with empty plots? The cheapest unlocked seed plants "+
+		"for FREE — \"the land provides\".") + "\n")
+
+	b.WriteString("\n" + styleSection.Render("Golden harvest & moon") + "\n")
+	b.WriteString(g.helpBody("Any harvest has a "+money(gh.ChancePct)+
+		"% chance to pay "+money(goldenMult)+"×. "+
+		"Moon phases cycle every "+money(c.Moon.CycleDays)+
+		" days in the header. Full Moon gives Moonberry +"+
+		money(c.Moon.FullMoonSellBonusPct)+"% sell bonus.") + "\n")
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func eventHelpEffect(ev content.Event) string {
+	switch ev.Effect {
+	case "seed_discount_pct":
+		return "seeds −" + money(ev.EffectValue) + "%"
+	case "sell_bonus_pct":
+		return "sell value +" + money(ev.EffectValue) + "%"
+	case "grow_speed_pct":
+		return "grow time −" + money(ev.EffectValue) + "%"
+	default:
+		return sanitizeText(ev.Description)
+	}
+}
+
+func eventHelpAction(ev content.Event) string {
+	switch ev.Effect {
+	case "seed_discount_pct":
+		return "Good time to plant expensive slow crops."
+	case "sell_bonus_pct":
+		return "Harvest anything ready immediately."
+	case "grow_speed_pct":
+		return "Crops mature in half the time this cycle."
+	default:
+		return ""
+	}
 }
 
 func (g *Game) viewOnboarding() string {

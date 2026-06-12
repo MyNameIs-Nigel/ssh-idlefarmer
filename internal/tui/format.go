@@ -105,3 +105,46 @@ func truncate(s string, max int) string {
 	}
 	return string(runes[:max-1]) + "…"
 }
+
+// wrapIndent word-wraps plain text so each line fits within width runes,
+// prefixing every line with indent. Used for help text before styling so
+// lipgloss does not re-wrap ANSI-colored lines (which pads badly).
+func wrapIndent(width int, indent, text string) string {
+	if width < 1 {
+		width = 1
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return indent
+	}
+	indentWidth := len([]rune(indent))
+	words := strings.Fields(text)
+	var lines []string
+	var cur strings.Builder
+	cur.WriteString(indent)
+	used := indentWidth
+	for _, word := range words {
+		wordWidth := len([]rune(word))
+		extra := wordWidth
+		if cur.Len() > len(indent) {
+			extra++ // space before word
+		}
+		if used+extra > width && cur.Len() > len(indent) {
+			lines = append(lines, cur.String())
+			cur.Reset()
+			cur.WriteString(indent)
+			used = indentWidth
+			extra = wordWidth
+		}
+		if cur.Len() > len(indent) {
+			cur.WriteByte(' ')
+			used++
+		}
+		cur.WriteString(word)
+		used += wordWidth
+	}
+	if cur.Len() > 0 {
+		lines = append(lines, cur.String())
+	}
+	return strings.Join(lines, "\n")
+}
