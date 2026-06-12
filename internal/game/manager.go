@@ -41,10 +41,14 @@ type Manager struct {
 	autosave time.Duration
 	policy   Policy
 
-	mu     sync.Mutex
-	actors map[saveKey]*actor
-	nextID atomic.Uint64
+	mu      sync.Mutex
+	actors  map[saveKey]*actor
+	closing bool // set by Shutdown; refuses new attaches during the flush
+	nextID  atomic.Uint64
 }
+
+// ErrShuttingDown is returned by Attach once Shutdown has begun.
+var ErrShuttingDown = errors.New("the farm is closing for maintenance")
 
 // NewManager wires the save registry over the given store and content.
 func NewManager(st *store.Store, c *content.Content, logger *slog.Logger, autosave time.Duration, policy Policy) *Manager {
@@ -83,6 +87,9 @@ func (m *Manager) Attach(ctx context.Context, id identity.SessionIdentity, publi
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.closing {
+		return AttachResult{}, ErrShuttingDown
+	}
 	if err := m.store.TouchAccount(ctx, id.Fingerprint, publicKey, now); err != nil {
 		return AttachResult{}, err
 	}
@@ -187,6 +194,7 @@ func (m *Manager) stopActorLocked(a *actor) {
 // runs, and no in-flight progress is lost across a redeploy.
 func (m *Manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
+	m.closing = true // the SSH listener is still up; refuse attaches mid-flush
 	actors := make([]*actor, 0, len(m.actors))
 	for _, a := range m.actors {
 		actors = append(actors, a)

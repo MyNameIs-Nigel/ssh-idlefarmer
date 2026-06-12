@@ -13,6 +13,9 @@ max_plots = 6
 divisor = 100
 min_earnings = 10000
 
+[labels]
+starseed_name = "Starseeds"
+
 [[upgrade]]
 id = "growth"
 name = "Rich Soil"
@@ -53,19 +56,24 @@ max_level = 4
 effect = "plot_discount_pct"
 effect_value = 10
 
-[[tool]]
-id = "auto_harvester"
-name = "Auto-Harvester"
-description = "Harvests ripe crops for you."
-cost = 1500
-unlock = { kind = "earnings", value = 1000 }
+[[multiplier]]
+id = "fertilizer"
+name = "Fertilizer"
+description = "Grow 8% faster per level."
+cost = 200
+cost_growth_pct = 250
+max_level = 3
+effect = "grow_speed_pct"
+effect_value = 8
 
-[[tool]]
-id = "auto_sower"
-name = "Auto-Sower"
-description = "Replants what the harvester gathers."
-cost = 4000
-unlock = { kind = "earnings", value = 5000 }
+[[seed_upgrade]]
+id = "gamble_strain"
+crop_id = "gamble"
+name = "Hardier Gamble"
+description = "Better salvage on failure."
+cost = 100
+cost_growth_pct = 200
+max_level = 3
 
 [[zone]]
 id = "greenhouse"
@@ -74,6 +82,47 @@ description = "+6 plots and exotic crops."
 cost = 25000
 extra_plots = 6
 unlock = { kind = "earnings", value = 15000 }
+
+[events]
+min_interval_sec = 900
+max_interval_sec = 1500
+min_duration_sec = 90
+max_duration_sec = 180
+
+[[event]]
+id = "market_day"
+name = "Market Day"
+description = "Seeds cheaper."
+effect = "seed_discount_pct"
+effect_value = 40
+
+[plot_automation]
+auto_harvest_base_cost = 600
+auto_harvest_growth_pct = 150
+auto_sow_cost = 1400
+auto_sow_min_earnings = 5000
+
+[gifts]
+online_interval_sec = 1200
+offline_interval_sec = 18000
+starseed_chance_pct = 20
+coin_reward_floor = 8
+coin_reward_ceiling = 5000
+
+[golden_harvest]
+chance_pct = 0
+multiplier = 100
+
+[moon]
+cycle_days = 28
+full_moon_sell_bonus_pct = 15
+moonberry_crop_id = "moonberry"
+
+[critters]
+visit_chance_pct = 0
+shoo_reward_min = 3
+shoo_reward_max = 12
+kind = ["crow"]
 
 [[achievement]]
 id = "first_sprout"

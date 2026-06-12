@@ -15,12 +15,15 @@ import (
 
 // StateVersion is the current save-payload version. Older payloads are
 // upgraded in place by DecodeState.
-const StateVersion = 2
+const StateVersion = 3
 
 // Plot is one tile of farmland. Empty when Crop is "".
 type Plot struct {
-	Crop      string `json:"crop,omitempty"`
-	PlantedAt int64  `json:"planted_at,omitempty"` // unix seconds
+	Crop        string `json:"crop,omitempty"`
+	PlantedAt   int64  `json:"planted_at,omitempty"` // unix seconds
+	AutoHarvest bool   `json:"auto_harvest,omitempty"`
+	AutoSow     bool   `json:"auto_sow,omitempty"`
+	Critter     string `json:"critter,omitempty"` // cosmetic visitor on empty plots
 }
 
 // State is the full authoritative save. It is JSON-serialized into the
@@ -38,9 +41,17 @@ type State struct {
 	Coins          int64           `json:"coins"`
 	Plots          []Plot          `json:"plots"`
 	PurchasedPlots int             `json:"purchased_plots"`
-	Tools          map[string]bool `json:"tools"`
+	Tools          map[string]bool `json:"tools,omitempty"` // legacy; migrated to per-plot flags
 	Zones          map[string]bool `json:"zones"`
 	RunEarnings    int64           `json:"run_earnings"`
+	Multipliers    map[string]int  `json:"multipliers,omitempty"`   // run-scoped coin upgrades
+	SeedUpgrades   map[string]int  `json:"seed_upgrades,omitempty"` // crop id -> Hardier Strain level
+
+	// Gifts and events (gift pending persists across rebirth; events are transient).
+	GiftPending   bool   `json:"gift_pending,omitempty"`
+	GiftArrivedAt int64  `json:"gift_arrived_at,omitempty"`
+	EventID       string `json:"event_id,omitempty"`
+	EventEndsAt   int64  `json:"event_ends_at,omitempty"`
 
 	// Permanent (survive rebirth).
 	PrestigeCurrency int64            `json:"prestige_currency"`
@@ -50,6 +61,8 @@ type State struct {
 	LifetimeEarnings int64            `json:"lifetime_earnings"`
 	LifetimeHarvests int64            `json:"lifetime_harvests"`
 	FlavorEnabled    bool             `json:"flavor_enabled"`
+	FarmName         string           `json:"farm_name,omitempty"`
+	MoonEpoch        int64            `json:"moon_epoch,omitempty"` // unix day anchor for moon phase
 }
 
 // New creates a fresh save seeded with seed, simulated as of now.
@@ -62,9 +75,12 @@ func New(c *content.Content, seed uint64, now int64) *State {
 		Plots:         make([]Plot, c.Start.Plots),
 		Tools:         map[string]bool{},
 		Zones:         map[string]bool{},
+		Multipliers:   map[string]int{},
+		SeedUpgrades:  map[string]int{},
 		Upgrades:      map[string]int{},
 		Achievements:  map[string]int64{},
 		FlavorEnabled: true,
+		MoonEpoch:     now / 86400,
 	}
 	return s
 }
@@ -89,16 +105,31 @@ func DecodeState(b []byte) (*State, error) {
 	return &s, nil
 }
 
-// upgradeState migrates older payload versions forward. Version 1 was the
-// pre-progression shape (no prestige, upgrades, achievements, or flavor);
-// version 2 added them. The upgrade is additive and never destructive.
+// upgradeState migrates older payload versions forward.
 func upgradeState(s *State) {
 	if s.Version < 2 {
 		s.FlavorEnabled = true
 		s.Version = 2
 	}
-	// Normalize nil maps regardless of version so the engine can assume
-	// they exist (JSON omits empty maps depending on writer).
+	if s.Version < 3 {
+		// Migrate global auto-tools to per-plot flags.
+		hadHarvester := s.Tools["auto_harvester"]
+		hadSower := s.Tools["auto_sower"]
+		if hadHarvester || hadSower {
+			for i := range s.Plots {
+				if hadHarvester {
+					s.Plots[i].AutoHarvest = true
+				}
+				if hadSower {
+					s.Plots[i].AutoSow = true
+				}
+			}
+		}
+		if s.MoonEpoch == 0 && s.UpdatedAt > 0 {
+			s.MoonEpoch = s.UpdatedAt / 86400
+		}
+		s.Version = 3
+	}
 	if s.Tools == nil {
 		s.Tools = map[string]bool{}
 	}
@@ -111,10 +142,22 @@ func upgradeState(s *State) {
 	if s.Achievements == nil {
 		s.Achievements = map[string]int64{}
 	}
+	if s.Multipliers == nil {
+		s.Multipliers = map[string]int{}
+	}
+	if s.SeedUpgrades == nil {
+		s.SeedUpgrades = map[string]int{}
+	}
 }
 
 // UpgradeLevel returns the owned level of a permanent upgrade.
 func (s *State) UpgradeLevel(id string) int { return s.Upgrades[id] }
+
+// MultiplierLevel returns the owned level of a run-scoped multiplier.
+func (s *State) MultiplierLevel(id string) int { return s.Multipliers[id] }
+
+// SeedUpgradeLevel returns the Hardier Strain level for a risky crop.
+func (s *State) SeedUpgradeLevel(cropID string) int { return s.SeedUpgrades[cropID] }
 
 // Clone returns a deep copy, used to hand read-only snapshots to the UI
 // without sharing the actor's authoritative state.
@@ -125,6 +168,8 @@ func (s *State) Clone() *State {
 	c.Zones = maps.Clone(s.Zones)
 	c.Upgrades = maps.Clone(s.Upgrades)
 	c.Achievements = maps.Clone(s.Achievements)
+	c.Multipliers = maps.Clone(s.Multipliers)
+	c.SeedUpgrades = maps.Clone(s.SeedUpgrades)
 	return &c
 }
 
@@ -171,10 +216,29 @@ func (s *State) nextRand() uint64 {
 // roll100 returns a uniform integer in [0, 100).
 func (s *State) roll100() int64 { return int64(s.nextRand() % 100) }
 
+// rollBp returns a uniform integer in [0, 10000), for chances that need
+// sub-percent resolution (per-second rolls against multi-minute intervals).
+func (s *State) rollBp() int64 { return int64(s.nextRand() % 10000) }
+
 // rollRange returns a uniform integer in [lo, hi].
 func (s *State) rollRange(lo, hi int64) int64 {
 	if hi <= lo {
 		return lo
 	}
 	return lo + int64(s.nextRand()%uint64(hi-lo+1))
+}
+
+// SalvageNumerator returns the salvage fraction numerator (out of 8) for a
+// Hardier Strain level: 1/8, 1/4, 1/2, 3/4 at levels 0-3.
+func SalvageNumerator(level int) int64 {
+	switch {
+	case level <= 0:
+		return 1
+	case level == 1:
+		return 2
+	case level == 2:
+		return 4
+	default:
+		return 6
+	}
 }

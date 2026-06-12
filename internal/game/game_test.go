@@ -218,6 +218,11 @@ func TestShutdownFlushesAndKicksEveryone(t *testing.T) {
 	if _, _, err := res.Session.Advance(2000); err != ErrSessionClosed {
 		t.Fatalf("expected ErrSessionClosed after shutdown, got %v", err)
 	}
+	// The SSH listener may still be up while the flush runs; a connection
+	// landing in that window must be refused, not given an unflushed actor.
+	if _, err := m.Attach(context.Background(), id, "k", 2000, nil); err != ErrShuttingDown {
+		t.Fatalf("expected ErrShuttingDown for attach during shutdown, got %v", err)
+	}
 
 	// A fresh manager over the same database sees the flushed change —
 	// this is the redeploy-loses-nothing guarantee.
@@ -248,8 +253,8 @@ func TestIntentsValidateAgainstAuthoritativeState(t *testing.T) {
 	if _, _, _, err := res.Session.Rebirth(1000); err != sim.ErrRebirthTooSoon {
 		t.Fatalf("expected ErrRebirthTooSoon, got %v", err)
 	}
-	if _, _, err := res.Session.BuyTool(1000, "auto_harvester"); err != sim.ErrLocked {
-		t.Fatalf("expected ErrLocked, got %v", err)
+	if _, _, err := res.Session.UpgradePlotAuto(1000, 0, "harvest"); err != sim.ErrCantAfford {
+		t.Fatalf("expected ErrCantAfford for plot auto at 25 coins, got %v", err)
 	}
 	snap, _, _ := res.Session.Advance(1001)
 	if snap.State.Coins != 25 {

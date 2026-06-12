@@ -23,20 +23,17 @@ type Unlock struct {
 
 // Crop is one plantable crop definition.
 type Crop struct {
-	ID             string `toml:"id"`
-	Name           string `toml:"name"`
-	Archetype      string `toml:"archetype"` // "fast", "slow", "risky"
-	SeedCost       int64  `toml:"seed_cost"`
-	GrowSeconds    int64  `toml:"grow_seconds"`
-	SellValue      int64  `toml:"sell_value"`
-	FailChancePct  int64  `toml:"fail_chance_pct"`
-	FailValue      int64  `toml:"fail_value"`
-	BonusChancePct int64  `toml:"bonus_chance_pct"`
-	BonusValue     int64  `toml:"bonus_value"`
-	Unlock         Unlock `toml:"unlock"`
+	ID            string `toml:"id"`
+	Name          string `toml:"name"`
+	Archetype     string `toml:"archetype"` // "fast", "slow", "risky"
+	SeedCost      int64  `toml:"seed_cost"`
+	GrowSeconds   int64  `toml:"grow_seconds"`
+	SellValue     int64  `toml:"sell_value"`
+	FailChancePct int64  `toml:"fail_chance_pct"` // risky only: chance of salvage vs full sell
+	Unlock        Unlock `toml:"unlock"`
 }
 
-// Upgrade is a permanent prestige-bought bonus.
+// Upgrade is a permanent Starseed-bought bonus.
 type Upgrade struct {
 	ID            string `toml:"id"`
 	Name          string `toml:"name"`
@@ -44,17 +41,31 @@ type Upgrade struct {
 	Cost          int64  `toml:"cost"`
 	CostGrowthPct int64  `toml:"cost_growth_pct"`
 	MaxLevel      int    `toml:"max_level"`
-	Effect        string `toml:"effect"` // grow_speed_pct, sell_bonus_pct, start_coins, plot_discount_pct
+	Effect        string `toml:"effect"`
 	EffectValue   int64  `toml:"effect_value"`
 }
 
-// Tool is a run-scoped automation purchase.
-type Tool struct {
-	ID          string `toml:"id"`
-	Name        string `toml:"name"`
-	Description string `toml:"description"`
-	Cost        int64  `toml:"cost"`
-	Unlock      Unlock `toml:"unlock"`
+// Multiplier is a run-scoped coin-purchased bonus (Market tab).
+type Multiplier struct {
+	ID            string `toml:"id"`
+	Name          string `toml:"name"`
+	Description   string `toml:"description"`
+	Cost          int64  `toml:"cost"`
+	CostGrowthPct int64  `toml:"cost_growth_pct"`
+	MaxLevel      int    `toml:"max_level"`
+	Effect        string `toml:"effect"` // grow_speed_pct, sell_bonus_pct
+	EffectValue   int64  `toml:"effect_value"`
+}
+
+// SeedUpgrade is a per-risky-crop Hardier Strain upgrade (Market tab).
+type SeedUpgrade struct {
+	ID            string `toml:"id"`
+	CropID        string `toml:"crop_id"`
+	Name          string `toml:"name"`
+	Description   string `toml:"description"`
+	Cost          int64  `toml:"cost"`
+	CostGrowthPct int64  `toml:"cost_growth_pct"`
+	MaxLevel      int    `toml:"max_level"` // 3 levels → salvage 1/4, 1/2, 3/4
 }
 
 // Zone is a run-scoped farm expansion.
@@ -65,6 +76,72 @@ type Zone struct {
 	Cost        int64  `toml:"cost"`
 	ExtraPlots  int    `toml:"extra_plots"`
 	Unlock      Unlock `toml:"unlock"`
+}
+
+// Event is a random online event type.
+type Event struct {
+	ID          string `toml:"id"`
+	Name        string `toml:"name"`
+	Description string `toml:"description"`
+	Effect      string `toml:"effect"` // seed_discount_pct, sell_bonus_pct, grow_speed_pct
+	EffectValue int64  `toml:"effect_value"`
+}
+
+// EventsConfig tunes random event frequency and duration.
+type EventsConfig struct {
+	MinIntervalSec int64 `toml:"min_interval_sec"`
+	MaxIntervalSec int64 `toml:"max_interval_sec"`
+	MinDurationSec int64 `toml:"min_duration_sec"`
+	MaxDurationSec int64 `toml:"max_duration_sec"`
+}
+
+// PlotAutomation configures per-plot automation purchase costs.
+type PlotAutomation struct {
+	AutoHarvestBaseCost  int64 `toml:"auto_harvest_base_cost"`
+	AutoHarvestGrowthPct int64 `toml:"auto_harvest_growth_pct"`
+	AutoSowCost          int64 `toml:"auto_sow_cost"`
+	AutoSowMinEarnings   int64 `toml:"auto_sow_min_earnings"`
+}
+
+// GiftTuning configures gift package arrival and rewards.
+type GiftTuning struct {
+	OnlineIntervalSec  int64 `toml:"online_interval_sec"`
+	OfflineIntervalSec int64 `toml:"offline_interval_sec"`
+	StarseedChancePct  int64 `toml:"starseed_chance_pct"`
+	CoinRewardFloor    int64 `toml:"coin_reward_floor"`
+	CoinRewardCeiling  int64 `toml:"coin_reward_ceiling"`
+}
+
+// GoldenHarvest tunes the rare golden harvest bonus.
+type GoldenHarvest struct {
+	ChancePct  int64 `toml:"chance_pct"`
+	Multiplier int64 `toml:"multiplier"` // payout × multiplier / 10 (10× at 100)
+}
+
+// MoonConfig tunes the cosmetic moon cycle and Moonberry bonus.
+type MoonConfig struct {
+	CycleDays            int64  `toml:"cycle_days"`
+	FullMoonSellBonusPct int64  `toml:"full_moon_sell_bonus_pct"`
+	MoonberryCropID      string `toml:"moonberry_crop_id"`
+}
+
+// CritterConfig tunes cosmetic critter visits on empty plots.
+type CritterConfig struct {
+	VisitChancePct int64    `toml:"visit_chance_pct"`
+	ShooRewardMin  int64    `toml:"shoo_reward_min"`
+	ShooRewardMax  int64    `toml:"shoo_reward_max"`
+	Kinds          []string `toml:"kind"`
+}
+
+// Headline is a one-line flavor line for the Daily Furrow banner.
+type Headline struct {
+	Text string `toml:"text"`
+}
+
+// Labels holds player-facing names for currencies and similar.
+type Labels struct {
+	StarseedName string `toml:"starseed_name"`
+	StarseedDesc string `toml:"starseed_desc"`
 }
 
 // Condition triggers an achievement.
@@ -113,33 +190,56 @@ type cropsFile struct {
 }
 
 type balanceFile struct {
-	Start        Start         `toml:"start"`
-	Land         Land          `toml:"land"`
-	Prestige     Prestige      `toml:"prestige"`
-	Upgrades     []Upgrade     `toml:"upgrade"`
-	Tools        []Tool        `toml:"tool"`
-	Zones        []Zone        `toml:"zone"`
-	Achievements []Achievement `toml:"achievement"`
-	Flavor       Flavor        `toml:"flavor"`
+	Start          Start          `toml:"start"`
+	Land           Land           `toml:"land"`
+	Prestige       Prestige       `toml:"prestige"`
+	Labels         Labels         `toml:"labels"`
+	Upgrades       []Upgrade      `toml:"upgrade"`
+	Multipliers    []Multiplier   `toml:"multiplier"`
+	SeedUpgrades   []SeedUpgrade  `toml:"seed_upgrade"`
+	Zones          []Zone         `toml:"zone"`
+	Events         []Event        `toml:"event"`
+	EventsConfig   EventsConfig   `toml:"events"`
+	PlotAutomation PlotAutomation `toml:"plot_automation"`
+	Gifts          GiftTuning     `toml:"gifts"`
+	GoldenHarvest  GoldenHarvest  `toml:"golden_harvest"`
+	Moon           MoonConfig     `toml:"moon"`
+	Critters       CritterConfig  `toml:"critters"`
+	Headlines      []Headline     `toml:"headline"`
+	Achievements   []Achievement  `toml:"achievement"`
+	Flavor         Flavor         `toml:"flavor"`
 }
 
 // Content is the validated, immutable game configuration. Lookup maps are
 // built once at load; treat the whole struct as read-only after Load.
 type Content struct {
-	Crops        []Crop
-	Upgrades     []Upgrade
-	Tools        []Tool
-	Zones        []Zone
-	Achievements []Achievement
-	Start        Start
-	Land         Land
-	Prestige     Prestige
-	Flavor       Flavor
+	Crops          []Crop
+	Upgrades       []Upgrade
+	Multipliers    []Multiplier
+	SeedUpgrades   []SeedUpgrade
+	Zones          []Zone
+	Events         []Event
+	Headlines      []Headline
+	Achievements   []Achievement
+	Start          Start
+	Land           Land
+	Prestige       Prestige
+	Labels         Labels
+	EventsConfig   EventsConfig
+	PlotAutomation PlotAutomation
+	Gifts          GiftTuning
+	GoldenHarvest  GoldenHarvest
+	Moon           MoonConfig
+	Critters       CritterConfig
+	Flavor         Flavor
 
-	cropByID    map[string]*Crop
-	upgradeByID map[string]*Upgrade
-	toolByID    map[string]*Tool
-	zoneByID    map[string]*Zone
+	cropByID          map[string]*Crop
+	upgradeByID       map[string]*Upgrade
+	multiplierByID    map[string]*Multiplier
+	seedUpgradeByID   map[string]*SeedUpgrade
+	seedUpgradeByCrop map[string]*SeedUpgrade
+	zoneByID          map[string]*Zone
+	eventByID         map[string]*Event
 }
 
 // Load reads content from overrideDir when set, otherwise from the embedded
@@ -160,15 +260,25 @@ func Load(overrideDir string) (*Content, error) {
 	}
 
 	c := &Content{
-		Crops:        cf.Crops,
-		Upgrades:     bf.Upgrades,
-		Tools:        bf.Tools,
-		Zones:        bf.Zones,
-		Achievements: bf.Achievements,
-		Start:        bf.Start,
-		Land:         bf.Land,
-		Prestige:     bf.Prestige,
-		Flavor:       bf.Flavor,
+		Crops:          cf.Crops,
+		Upgrades:       bf.Upgrades,
+		Multipliers:    bf.Multipliers,
+		SeedUpgrades:   bf.SeedUpgrades,
+		Zones:          bf.Zones,
+		Events:         bf.Events,
+		Headlines:      bf.Headlines,
+		Achievements:   bf.Achievements,
+		Start:          bf.Start,
+		Land:           bf.Land,
+		Prestige:       bf.Prestige,
+		Labels:         bf.Labels,
+		EventsConfig:   bf.EventsConfig,
+		PlotAutomation: bf.PlotAutomation,
+		Gifts:          bf.Gifts,
+		GoldenHarvest:  bf.GoldenHarvest,
+		Moon:           bf.Moon,
+		Critters:       bf.Critters,
+		Flavor:         bf.Flavor,
 	}
 	if err := c.validate(); err != nil {
 		return nil, err
@@ -197,13 +307,23 @@ func (c *Content) buildIndexes() {
 	for i := range c.Upgrades {
 		c.upgradeByID[c.Upgrades[i].ID] = &c.Upgrades[i]
 	}
-	c.toolByID = make(map[string]*Tool, len(c.Tools))
-	for i := range c.Tools {
-		c.toolByID[c.Tools[i].ID] = &c.Tools[i]
+	c.multiplierByID = make(map[string]*Multiplier, len(c.Multipliers))
+	for i := range c.Multipliers {
+		c.multiplierByID[c.Multipliers[i].ID] = &c.Multipliers[i]
+	}
+	c.seedUpgradeByID = make(map[string]*SeedUpgrade, len(c.SeedUpgrades))
+	c.seedUpgradeByCrop = make(map[string]*SeedUpgrade, len(c.SeedUpgrades))
+	for i := range c.SeedUpgrades {
+		c.seedUpgradeByID[c.SeedUpgrades[i].ID] = &c.SeedUpgrades[i]
+		c.seedUpgradeByCrop[c.SeedUpgrades[i].CropID] = &c.SeedUpgrades[i]
 	}
 	c.zoneByID = make(map[string]*Zone, len(c.Zones))
 	for i := range c.Zones {
 		c.zoneByID[c.Zones[i].ID] = &c.Zones[i]
+	}
+	c.eventByID = make(map[string]*Event, len(c.Events))
+	for i := range c.Events {
+		c.eventByID[c.Events[i].ID] = &c.Events[i]
 	}
 }
 
@@ -213,11 +333,28 @@ func (c *Content) Crop(id string) *Crop { return c.cropByID[id] }
 // UpgradeByID returns the upgrade definition for id, or nil.
 func (c *Content) UpgradeByID(id string) *Upgrade { return c.upgradeByID[id] }
 
-// ToolByID returns the tool definition for id, or nil.
-func (c *Content) ToolByID(id string) *Tool { return c.toolByID[id] }
+// MultiplierByID returns the multiplier definition for id, or nil.
+func (c *Content) MultiplierByID(id string) *Multiplier { return c.multiplierByID[id] }
+
+// SeedUpgradeByID returns the seed upgrade definition for id, or nil.
+func (c *Content) SeedUpgradeByID(id string) *SeedUpgrade { return c.seedUpgradeByID[id] }
+
+// SeedUpgradeForCrop returns the Hardier Strain upgrade for a crop, or nil.
+func (c *Content) SeedUpgradeForCrop(cropID string) *SeedUpgrade { return c.seedUpgradeByCrop[cropID] }
 
 // ZoneByID returns the zone definition for id, or nil.
 func (c *Content) ZoneByID(id string) *Zone { return c.zoneByID[id] }
+
+// EventByID returns the event definition for id, or nil.
+func (c *Content) EventByID(id string) *Event { return c.eventByID[id] }
+
+// StarseedLabel returns the player-facing name for prestige currency.
+func (c *Content) StarseedLabel() string {
+	if c.Labels.StarseedName != "" {
+		return c.Labels.StarseedName
+	}
+	return "Starseeds"
+}
 
 func (c *Content) validate() error {
 	if len(c.Crops) == 0 {
@@ -279,15 +416,11 @@ func (c *Content) validate() error {
 			return fmt.Errorf("content: crop %q needs seed_cost >= 0, sell_value >= 0, grow_seconds >= 1", cr.ID)
 		}
 		if cr.Archetype == "risky" {
-			if cr.FailChancePct < 0 || cr.BonusChancePct < 0 ||
-				cr.FailChancePct+cr.BonusChancePct > 100 {
-				return fmt.Errorf("content: crop %q risky chances must be >= 0 and sum to <= 100", cr.ID)
+			if cr.FailChancePct < 1 || cr.FailChancePct > 99 {
+				return fmt.Errorf("content: crop %q fail_chance_pct must be 1-99", cr.ID)
 			}
-			if cr.FailValue < 0 || cr.BonusValue < 0 {
-				return fmt.Errorf("content: crop %q risky values must be >= 0", cr.ID)
-			}
-		} else if cr.FailChancePct != 0 || cr.BonusChancePct != 0 {
-			return fmt.Errorf("content: crop %q sets risk chances but is not risky", cr.ID)
+		} else if cr.FailChancePct != 0 {
+			return fmt.Errorf("content: crop %q sets fail_chance_pct but is not risky", cr.ID)
 		}
 		if err := validateUnlock("crop", cr.ID, cr.Unlock, zoneIDs); err != nil {
 			return err
@@ -300,9 +433,10 @@ func (c *Content) validate() error {
 	}
 
 	upgradeIDs := map[string]bool{}
-	validEffects := map[string]bool{
+	validUpgradeEffects := map[string]bool{
 		"grow_speed_pct": true, "sell_bonus_pct": true,
 		"start_coins": true, "plot_discount_pct": true,
+		"gift_rate_pct": true, "event_rate_pct": true, "event_duration_pct": true,
 	}
 	for i, u := range c.Upgrades {
 		if err := requireID("upgrade", i, u.ID, u.Name); err != nil {
@@ -312,7 +446,7 @@ func (c *Content) validate() error {
 			return fmt.Errorf("content: duplicate upgrade id %q", u.ID)
 		}
 		upgradeIDs[u.ID] = true
-		if !validEffects[u.Effect] {
+		if !validUpgradeEffects[u.Effect] {
 			return fmt.Errorf("content: upgrade %q has unknown effect %q", u.ID, u.Effect)
 		}
 		if u.Cost < 1 || u.CostGrowthPct < 100 || u.MaxLevel < 1 || u.EffectValue < 1 {
@@ -325,21 +459,107 @@ func (c *Content) validate() error {
 		}
 	}
 
-	toolIDs := map[string]bool{}
-	for i, tl := range c.Tools {
-		if err := requireID("tool", i, tl.ID, tl.Name); err != nil {
+	multIDs := map[string]bool{}
+	validMultEffects := map[string]bool{"grow_speed_pct": true, "sell_bonus_pct": true}
+	for i, m := range c.Multipliers {
+		if err := requireID("multiplier", i, m.ID, m.Name); err != nil {
 			return err
 		}
-		if toolIDs[tl.ID] {
-			return fmt.Errorf("content: duplicate tool id %q", tl.ID)
+		if multIDs[m.ID] {
+			return fmt.Errorf("content: duplicate multiplier id %q", m.ID)
 		}
-		toolIDs[tl.ID] = true
-		if tl.Cost < 0 {
-			return fmt.Errorf("content: tool %q needs cost >= 0", tl.ID)
+		multIDs[m.ID] = true
+		if !validMultEffects[m.Effect] {
+			return fmt.Errorf("content: multiplier %q has unknown effect %q", m.ID, m.Effect)
 		}
-		if err := validateUnlock("tool", tl.ID, tl.Unlock, zoneIDs); err != nil {
+		if m.Cost < 1 || m.CostGrowthPct < 100 || m.MaxLevel < 1 || m.EffectValue < 1 {
+			return fmt.Errorf("content: multiplier %q needs cost >= 1, cost_growth_pct >= 100, max_level >= 1, effect_value >= 1", m.ID)
+		}
+		if m.Effect == "grow_speed_pct" && m.EffectValue*int64(m.MaxLevel) >= 100 {
+			return fmt.Errorf("content: multiplier %q grow reduction would reach 100%% at max level", m.ID)
+		}
+	}
+
+	seedUpIDs := map[string]bool{}
+	for i, su := range c.SeedUpgrades {
+		if err := requireID("seed_upgrade", i, su.ID, su.Name); err != nil {
 			return err
 		}
+		if seedUpIDs[su.ID] {
+			return fmt.Errorf("content: duplicate seed_upgrade id %q", su.ID)
+		}
+		seedUpIDs[su.ID] = true
+		if su.CropID == "" {
+			return fmt.Errorf("content: seed_upgrade %q needs crop_id", su.ID)
+		}
+		var crop *Crop
+		for i := range c.Crops {
+			if c.Crops[i].ID == su.CropID {
+				crop = &c.Crops[i]
+				break
+			}
+		}
+		if crop == nil {
+			return fmt.Errorf("content: seed_upgrade %q references unknown crop %q", su.ID, su.CropID)
+		}
+		if crop.Archetype != "risky" {
+			return fmt.Errorf("content: seed_upgrade %q must target a risky crop", su.ID)
+		}
+		if su.MaxLevel != 3 {
+			return fmt.Errorf("content: seed_upgrade %q max_level must be 3", su.ID)
+		}
+		if su.Cost < 1 || su.CostGrowthPct < 100 {
+			return fmt.Errorf("content: seed_upgrade %q needs cost >= 1 and cost_growth_pct >= 100", su.ID)
+		}
+	}
+
+	eventIDs := map[string]bool{}
+	validEventEffects := map[string]bool{
+		"seed_discount_pct": true, "sell_bonus_pct": true, "grow_speed_pct": true,
+	}
+	for i, ev := range c.Events {
+		if err := requireID("event", i, ev.ID, ev.Name); err != nil {
+			return err
+		}
+		if eventIDs[ev.ID] {
+			return fmt.Errorf("content: duplicate event id %q", ev.ID)
+		}
+		eventIDs[ev.ID] = true
+		if !validEventEffects[ev.Effect] {
+			return fmt.Errorf("content: event %q has unknown effect %q", ev.ID, ev.Effect)
+		}
+		if ev.EffectValue < 1 {
+			return fmt.Errorf("content: event %q effect_value must be >= 1", ev.ID)
+		}
+	}
+
+	ec := c.EventsConfig
+	if ec.MinIntervalSec < 1 || ec.MaxIntervalSec < ec.MinIntervalSec {
+		return fmt.Errorf("content: events interval config invalid")
+	}
+	if ec.MinDurationSec < 1 || ec.MaxDurationSec < ec.MinDurationSec {
+		return fmt.Errorf("content: events duration config invalid")
+	}
+
+	pa := c.PlotAutomation
+	if pa.AutoHarvestBaseCost < 1 || pa.AutoHarvestGrowthPct < 100 {
+		return fmt.Errorf("content: plot_automation harvest costs invalid")
+	}
+	if pa.AutoSowCost < 1 || pa.AutoSowMinEarnings < 1 {
+		return fmt.Errorf("content: plot_automation sow costs invalid")
+	}
+
+	gt := c.Gifts
+	if gt.OnlineIntervalSec < 1 || gt.OfflineIntervalSec < 1 {
+		return fmt.Errorf("content: gifts interval config invalid")
+	}
+	if gt.StarseedChancePct < 0 || gt.StarseedChancePct > 100 {
+		return fmt.Errorf("content: gifts starseed_chance_pct must be 0-100")
+	}
+
+	gh := c.GoldenHarvest
+	if gh.ChancePct < 0 || gh.ChancePct > 100 || gh.Multiplier < 10 {
+		return fmt.Errorf("content: golden_harvest config invalid")
 	}
 
 	achIDs := map[string]bool{}

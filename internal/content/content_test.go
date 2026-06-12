@@ -26,8 +26,11 @@ func TestEmbeddedContentLoadsAndValidates(t *testing.T) {
 	if c.Crop("turnip") == nil {
 		t.Fatal("lookup by id failed")
 	}
-	if len(c.Upgrades) == 0 || len(c.Tools) == 0 || len(c.Zones) == 0 || len(c.Achievements) == 0 {
+	if len(c.Upgrades) == 0 || len(c.Multipliers) == 0 || len(c.Zones) == 0 || len(c.Achievements) == 0 {
 		t.Fatal("embedded balance is missing progression content")
+	}
+	if c.StarseedLabel() != "Starseeds" {
+		t.Fatalf("starseed label = %q", c.StarseedLabel())
 	}
 }
 
@@ -70,7 +73,7 @@ seed_cost = 1
 grow_seconds = 1
 sell_value = 1
 `, minimalBalance},
-		{"risky chances over 100", minimalCrops + `
+		{"risky fail chance invalid", minimalCrops + `
 [[crop]]
 id = "bad"
 name = "Bad"
@@ -78,8 +81,7 @@ archetype = "risky"
 seed_cost = 1
 grow_seconds = 1
 sell_value = 1
-fail_chance_pct = 80
-bonus_chance_pct = 30
+fail_chance_pct = 0
 `, minimalBalance},
 		{"unknown unlock kind", minimalCrops + `
 [[crop]]
@@ -164,9 +166,6 @@ seed_cost = 3
 grow_seconds = 30
 sell_value = 10
 fail_chance_pct = 20
-fail_value = 1
-bonus_chance_pct = 10
-bonus_value = 30
 `
 
 const minimalBalance = `
@@ -182,6 +181,40 @@ max_plots = 5
 [prestige]
 divisor = 100
 min_earnings = 1000
+
+[events]
+min_interval_sec = 60
+max_interval_sec = 120
+min_duration_sec = 30
+max_duration_sec = 60
+
+[plot_automation]
+auto_harvest_base_cost = 10
+auto_harvest_growth_pct = 150
+auto_sow_cost = 20
+auto_sow_min_earnings = 100
+
+[gifts]
+online_interval_sec = 100
+offline_interval_sec = 1000
+starseed_chance_pct = 10
+coin_reward_floor = 1
+coin_reward_ceiling = 100
+
+[golden_harvest]
+chance_pct = 0
+multiplier = 100
+
+[moon]
+cycle_days = 28
+full_moon_sell_bonus_pct = 10
+moonberry_crop_id = "t"
+
+[critters]
+visit_chance_pct = 0
+shoo_reward_min = 1
+shoo_reward_max = 2
+kind = ["crow"]
 
 [flavor]
 enabled = false
