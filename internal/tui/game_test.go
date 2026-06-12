@@ -185,6 +185,10 @@ func TestScreenNavigationAndHelp(t *testing.T) {
 	if !strings.Contains(view(g), "Achievements") {
 		t.Fatalf("shift+tab from help should return to stats, got:\n%s", view(g))
 	}
+	g = press(t, g, "?")
+	if !strings.Contains(view(g), "How it works") {
+		t.Fatalf("? should open help, got:\n%s", view(g))
+	}
 }
 
 func TestHelpGameplayPage(t *testing.T) {

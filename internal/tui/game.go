@@ -257,6 +257,11 @@ func (g *Game) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "6":
 		g.scr = scrStats
 		return g, nil
+	case "?":
+		g.scr = scrHelp
+		g.helpPage = 0
+		g.helpScroll = 0
+		return g, nil
 	case "tab":
 		g.cycleScreen(true)
 		return g, nil

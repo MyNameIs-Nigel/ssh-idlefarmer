@@ -205,7 +205,7 @@ func (g *Game) viewFooter() string {
 	case g.overlay == ovOnboarding || g.overlay == ovAway:
 		hints = "press any key to continue"
 	case g.scr == scrFarm:
-		hints = "←↑↓→ · enter plant/harvest · a harvest all · u upgrades · g gift · q leave"
+		hints = "←↑↓→ · enter plant/harvest · a harvest all · u upgrades · g gift · ? help · q leave"
 	case g.scr == scrMarket:
 		hints = "↑/↓ select · enter buy · q quit"
 	case g.scr == scrLand:
@@ -732,6 +732,7 @@ func (g *Game) viewHelpControls() string {
 			"  rebirth for "+ss+" — permanent bonuses that make every later run faster.") + "\n\n" +
 		styleSection.Render("Keys") + "\n" +
 		styleValue.Render("  1-6               switch screens\n"+
+			"  ?                 help\n"+
 			"  tab / shift+tab   cycle screens forward / back\n"+
 			"  ←↑↓→              move around the farm\n"+
 			"  enter / space     plant (empty) or harvest (ready)\n"+
